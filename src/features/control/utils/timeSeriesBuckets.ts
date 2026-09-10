@@ -4,163 +4,187 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ESPCDFAggregationMethod } from "@store";
-
-import type {
-  TimeSeriesBucket,
-  TimeSeriesBucketBoundary,
-  TimeSeriesSummary,
-} from "@src/types/global";
 import {
-  DATA_TYPE_FLOAT,
-  DATA_TYPE_INT,
-  ESPRM_ENERGY_PARAM_TYPE,
+  TS_STAT_AVG,
+  TS_STAT_READING,
+  TS_STAT_SUM,
 } from "@shared/utils/constants";
 import {
-  TS_SUMMARY_KIND_AVERAGE,
-  TS_SUMMARY_KIND_TOTAL,
-} from "@features/control/constants";
-import { bucketIndexFor } from "./timeSeriesWindows";
+  enumerateWindowStarts,
+  toPlottableNumber,
+  type TimeSeriesBucket,
+  type TimeSeriesProvider,
+  type TimeSeriesSample,
+  type TimeSeriesStat,
+  type TimeSeriesWindow,
+} from "@shared/timeSeries";
 
-/**
- * A raw time-series point normalized for bucketing.
- */
-export interface TimeSeriesPoint {
-  /** Unix timestamp in milliseconds */
-  timestampMs: number;
-  /** Numeric value of the point */
+import type { ChartDataPoint } from "@src/types/global";
+
+/** A sample reduced to a plottable number. */
+export interface NumericSample {
+  /** Sample time (Unix ms). */
+  timestamp: number;
+  /** Numeric value. */
   value: number;
 }
 
 /**
- * Param types with cumulative (meter-style) semantics: their charts show
- * consumption per bucket, not an average of absolute readings. The RMNG
- * adaptor projects `Sum` from the window's consumption value for cumulative
- * params, so this stays correct for monotonically increasing meters.
+ * Converts raw samples to ascending numeric samples, dropping the unplottable.
+ * @param samples - Raw samples in any order
+ * @returns Ascending numeric samples
  */
-const CUMULATIVE_PARAM_TYPES: string[] = [ESPRM_ENERGY_PARAM_TYPE];
-
-/**
- * Resolves the aggregation method used for a param's chart, since the
- * revamped UI has no manual aggregation picker: cumulative param types
- * (e.g. energy meters) sum consumption per bucket, other numeric params
- * average per bucket, everything else counts reports per bucket.
- * @param dataType - The param's data type (float/int/bool/string)
- * @param paramType - The param's type identifier (e.g. "esp.param.energy")
- * @returns Aggregation method applied server-side or client-side per bucket
- */
-export const resolveAggregation = (
-  dataType?: string,
-  paramType?: string
-): ESPCDFAggregationMethod => {
-  if (paramType && CUMULATIVE_PARAM_TYPES.includes(paramType)) {
-    return ESPCDFAggregationMethod.Sum;
+export const toNumericSamples = (
+  samples: TimeSeriesSample[],
+): NumericSample[] => {
+  const numeric: NumericSample[] = [];
+  for (const sample of samples) {
+    const value = toPlottableNumber(sample.value);
+    if (value === undefined) continue;
+    numeric.push({ timestamp: sample.timestamp, value });
   }
-  const normalized = dataType?.toLowerCase();
-  if (normalized === DATA_TYPE_FLOAT || normalized === DATA_TYPE_INT) {
-    return ESPCDFAggregationMethod.Avg;
-  }
-  return ESPCDFAggregationMethod.Count;
+  return numeric.sort((a, b) => a.timestamp - b.timestamp);
 };
 
 /**
- * Applies an aggregation method to the raw values of one bucket.
- * @param values - Raw numeric values reported inside the bucket
- * @param method - Aggregation method to apply
- * @returns Aggregated bucket value
+ * Projects one statistic out of the buckets onto the full bucket grid of the
+ * range: every grid slot yields a point, with `null` where the backend has no
+ * bucket, so bars keep their slot and lines show gaps.
+ * @param buckets - Buckets of the range (any order)
+ * @param stat - Statistic to plot
+ * @param window - Aggregation window
+ * @param startMs - Range start (Unix ms)
+ * @param endMs - Range end, exclusive (Unix ms)
+ * @returns One chart point per grid slot, ascending
  */
-const aggregateValues = (
-  values: number[],
-  method: ESPCDFAggregationMethod
-): number => {
-  switch (method) {
-    case ESPCDFAggregationMethod.Count:
-      return values.length;
-    case ESPCDFAggregationMethod.Sum:
-      return values.reduce((total, value) => total + value, 0);
-    default: {
-      const sum = values.reduce((total, value) => total + value, 0);
-      return sum / values.length;
-    }
-  }
-};
-
-/**
- * Reduces raw (unaggregated) points into window buckets — the client-side
- * equivalent of server aggregation, used for `simple_ts` params whose
- * endpoint cannot aggregate.
- * @param points - Raw points (any order); points outside the window are ignored
- * @param boundaries - Ordered bucket boundaries of the window
- * @param method - Aggregation method to apply per bucket
- * @returns One bucket per boundary, `value: null` where no points landed
- */
-export const reducePointsIntoBuckets = (
-  points: TimeSeriesPoint[],
-  boundaries: TimeSeriesBucketBoundary[],
-  method: ESPCDFAggregationMethod
-): TimeSeriesBucket[] => {
-  const valuesPerBucket: number[][] = boundaries.map(() => []);
-  for (const point of points) {
-    const index = bucketIndexFor(point.timestampMs, boundaries);
-    if (index >= 0) {
-      valuesPerBucket[index].push(point.value);
-    }
-  }
-  return boundaries.map((boundary, index) => ({
-    ...boundary,
-    value:
-      valuesPerBucket[index].length > 0
-        ? aggregateValues(valuesPerBucket[index], method)
-        : null,
-  }));
-};
-
-/**
- * Places server-aggregated points (one value per interval) into window
- * buckets by their timestamps, used for `time_series` params.
- * @param points - Server-aggregated points (bucket-start timestamps)
- * @param boundaries - Ordered bucket boundaries of the window
- * @returns One bucket per boundary, `value: null` where no point landed
- */
-export const mapAggregatedPointsToBuckets = (
-  points: TimeSeriesPoint[],
-  boundaries: TimeSeriesBucketBoundary[]
-): TimeSeriesBucket[] => {
-  const values: (number | null)[] = boundaries.map(() => null);
-  for (const point of points) {
-    const index = bucketIndexFor(point.timestampMs, boundaries);
-    if (index >= 0) {
-      values[index] = point.value;
-    }
-  }
-  return boundaries.map((boundary, index) => ({
-    ...boundary,
-    value: values[index],
-  }));
-};
-
-/**
- * Summarizes the visible window for the header: averaging aggregations show
- * the window average, counting/summing aggregations show the window total.
- * @param buckets - Buckets of the visible window
- * @param method - Aggregation method the buckets were built with
- * @returns Window summary (`value: null` when every bucket is empty)
- */
-export const summarizeBuckets = (
+export const projectBuckets = (
   buckets: TimeSeriesBucket[],
-  method: ESPCDFAggregationMethod
-): TimeSeriesSummary => {
-  const values = buckets
-    .map((bucket) => bucket.value)
-    .filter((value): value is number => value !== null);
-
-  if (values.length === 0) {
-    return { value: null, kind: TS_SUMMARY_KIND_TOTAL };
-  }
-
-  const total = values.reduce((sum, value) => sum + value, 0);
-  if (method === ESPCDFAggregationMethod.Avg) {
-    return { value: total / values.length, kind: TS_SUMMARY_KIND_AVERAGE };
-  }
-  return { value: total, kind: TS_SUMMARY_KIND_TOTAL };
+  stat: TimeSeriesStat,
+  window: TimeSeriesWindow,
+  startMs: number,
+  endMs: number,
+): ChartDataPoint[] => {
+  const byStart = new Map<number, TimeSeriesBucket>();
+  for (const bucket of buckets) byStart.set(bucket.start, bucket);
+  return enumerateWindowStarts(startMs, endMs, window).map((start) => {
+    const value = byStart.get(start)?.stats[stat];
+    return {
+      timestamp: start,
+      value: typeof value === "number" ? value : null,
+      label: "",
+    };
+  });
 };
+
+/**
+ * Converts numeric samples to chart points.
+ * @param samples - Ascending numeric samples
+ * @returns Chart points
+ */
+export const samplesToPoints = (samples: NumericSample[]): ChartDataPoint[] =>
+  samples.map((sample) => ({
+    timestamp: sample.timestamp,
+    value: sample.value,
+    label: "",
+  }));
+
+/**
+ * Largest-Triangle-Three-Buckets downsampling: keeps the visual shape of a
+ * dense series with `threshold` points by picking, per bucket, the sample
+ * forming the largest triangle with its neighbours.
+ * @param samples - Ascending numeric samples
+ * @param threshold - Points to keep (at least 3)
+ * @returns Downsampled samples, first and last always kept
+ */
+export const downsampleLTTB = (
+  samples: NumericSample[],
+  threshold: number,
+): NumericSample[] => {
+  const length = samples.length;
+  if (threshold >= length || threshold < 3) return samples;
+
+  const sampled: NumericSample[] = [samples[0]];
+  const bucketSize = (length - 2) / (threshold - 2);
+  let previousIndex = 0;
+
+  for (let i = 0; i < threshold - 2; i += 1) {
+    const rangeStart = Math.floor((i + 1) * bucketSize) + 1;
+    const rangeEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, length);
+    let avgX = 0;
+    let avgY = 0;
+    for (let j = rangeStart; j < rangeEnd; j += 1) {
+      avgX += samples[j].timestamp;
+      avgY += samples[j].value;
+    }
+    const rangeLength = Math.max(rangeEnd - rangeStart, 1);
+    avgX /= rangeLength;
+    avgY /= rangeLength;
+
+    const bucketStart = Math.floor(i * bucketSize) + 1;
+    const bucketEnd = Math.min(Math.floor((i + 1) * bucketSize) + 1, length);
+    const previous = samples[previousIndex];
+    let maxArea = -1;
+    let chosenIndex = bucketStart;
+    for (let j = bucketStart; j < bucketEnd; j += 1) {
+      const area = Math.abs(
+        (previous.timestamp - avgX) * (samples[j].value - previous.value) -
+          (previous.timestamp - samples[j].timestamp) * (avgY - previous.value),
+      );
+      if (area > maxArea) {
+        maxArea = area;
+        chosenIndex = j;
+      }
+    }
+    sampled.push(samples[chosenIndex]);
+    previousIndex = chosenIndex;
+  }
+
+  sampled.push(samples[length - 1]);
+  return sampled;
+};
+
+/**
+ * Statistics the aggregator dropdown offers for the buckets on screen: what
+ * the backend computes, plus the meter `reading` for cumulative parameters.
+ * @param provider - Provider of the param
+ * @param isCumulative - Whether the buckets belong to a cumulative counter
+ * @returns Selectable statistics in display order
+ */
+export const resolveStatOptions = (
+  provider: TimeSeriesProvider,
+  isCumulative: boolean,
+): TimeSeriesStat[] => {
+  const options = [...provider.limits.stats];
+  if (
+    isCumulative &&
+    provider.limits.statsPerFetch === "all" &&
+    !options.includes(TS_STAT_READING)
+  ) {
+    options.push(TS_STAT_READING);
+  }
+  return options;
+};
+
+/**
+ * Statistic a fresh chart opens with: consumption (`sum`) for cumulative
+ * counters, otherwise the average, falling back to the first option.
+ * @param options - Selectable statistics
+ * @param isCumulative - Whether the parameter is a cumulative counter
+ * @returns Default statistic
+ */
+export const defaultStat = (
+  options: readonly TimeSeriesStat[],
+  isCumulative: boolean,
+): TimeSeriesStat => {
+  const preferred = isCumulative ? TS_STAT_SUM : TS_STAT_AVG;
+  if (options.includes(preferred)) return preferred;
+  return options[0] ?? TS_STAT_AVG;
+};
+
+/**
+ * Whether any bucket belongs to a cumulative counter.
+ * @param buckets - Buckets on screen
+ * @returns True when the parameter is cumulative
+ */
+export const bucketsAreCumulative = (buckets: TimeSeriesBucket[]): boolean =>
+  buckets.some((bucket) => bucket.isCumulative);

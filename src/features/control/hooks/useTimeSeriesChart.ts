@@ -4,323 +4,330 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ScrollView } from "react-native";
 import { useTranslation } from "react-i18next";
 
-import { ESPCDFAggregationInterval, ESPCDFWeekStart } from "@store";
-import type {
-  ESPCDFDeviceParam,
-  ESPCDFSimpleTSDataRequest,
-  ESPCDFSimpleTSDataResponse,
-  ESPCDFTSDataRequest,
-} from "@store";
-
-import type {
-  ChartGranularity,
-  ChartState,
-  TimeSeriesBucket,
-  UseTimeSeriesChartResult,
-} from "@src/types/global";
 import { useCDF } from "@shared/hooks/useCDF";
-import { canonicalizeIana } from "@shared/utils/timezone";
+import { getTimeSeriesProvider } from "@shared/timeSeries";
 import {
-  ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY,
-  ESPRM_PARAM_TIME_SERIES_PROPERTY,
+  DATA_TYPE_BOOL,
+  TS_MODE_RAW,
+  TS_STAT_COUNT,
+  WRITE_PERMISSION,
 } from "@shared/utils/constants";
+import { getParamUnit } from "@shared/utils/paramUnits";
+
+import type { ChartDataPoint, ChartState, ChartZoom } from "@src/types/global";
 import {
-  CHART_GRANULARITY_DAILY,
-  CHART_GRANULARITY_MONTHLY,
-  CHART_GRANULARITY_WEEKLY,
-  CHART_STATE_EMPTY,
-  CHART_STATE_ERROR,
-  CHART_STATE_LOADING,
-  CHART_STATE_READY,
-  CHART_STATE_UNSUPPORTED,
-  CHART_WINDOW_BUCKET_COUNT,
-  TS_MAX_PAGE_FETCHES,
-  TS_PAGE_RESULT_COUNT,
+  RAW_RENDER_SAMPLES,
+  RAW_ZOOM_MIN_SPAN_MS,
+  TS_EMPTY_KIND_ERROR,
+  TS_EMPTY_KIND_NO_DATA,
+  TS_EMPTY_KIND_NO_TIME_SERIES,
+  TS_EMPTY_KIND_UNSUPPORTED,
+  TS_FETCH_PLAN_RAW,
+  TS_FETCH_PLAN_UNSUPPORTED,
+  TS_NOTE_DOWNSAMPLED,
+  TS_NOTE_RAW_TRUNCATED,
 } from "@features/control/constants";
-import { computeWindowBuckets } from "@features/control/utils/timeSeriesWindows";
 import {
-  mapAggregatedPointsToBuckets,
-  reducePointsIntoBuckets,
-  resolveAggregation,
-  summarizeBuckets,
-  type TimeSeriesPoint,
+  availableModes,
+  describeRange,
+  isWindowMode,
+  rawXTicks,
+  resolveXAxis,
+  resolveXLabelKind,
+} from "@features/control/utils/timeSeriesWindows";
+import {
+  bucketsAreCumulative,
+  defaultStat,
+  downsampleLTTB,
+  projectBuckets,
+  resolveStatOptions,
+  samplesToPoints,
 } from "@features/control/utils/timeSeriesBuckets";
-import {
-  formatWindowRangeLabel,
-  getParamUnit,
-} from "@features/control/utils/timeSeriesFormat";
+import { createXLabelFormatter } from "@features/control/utils/timeSeriesHelper";
+import { useChartView } from "./useChartView";
+import { useTimeSeriesRange } from "./useTimeSeriesRange";
 
-/**
- * Server aggregation interval used for each granularity tab.
- */
-const GRANULARITY_TO_INTERVAL: Record<
-  ChartGranularity,
-  ESPCDFAggregationInterval
-> = {
-  [CHART_GRANULARITY_DAILY]: ESPCDFAggregationInterval.Day,
-  [CHART_GRANULARITY_WEEKLY]: ESPCDFAggregationInterval.Week,
-  [CHART_GRANULARITY_MONTHLY]: ESPCDFAggregationInterval.Month,
-};
-
-/**
- * X-axis label density per granularity, per the revamp design
- * (time-series-revamp-ui/): daily and monthly label every bucket; weekly
- * labels every other bucket because its range labels ("07-13 Jun") are too
- * wide for all seven. The tooltip always shows the selected bucket's full
- * label, so thinned buckets stay identifiable.
- */
-const GRANULARITY_TO_LABEL_EVERY_NTH: Record<ChartGranularity, number> = {
-  [CHART_GRANULARITY_DAILY]: 1,
-  [CHART_GRANULARITY_WEEKLY]: 2,
-  [CHART_GRANULARITY_MONTHLY]: 1,
-};
-
-/**
- * i18n keys for the "Last N …" range label of the newest window.
- */
-const GRANULARITY_TO_LAST_WINDOW_KEY: Record<ChartGranularity, string> = {
-  [CHART_GRANULARITY_DAILY]: "device.chart.lastWindow.daily",
-  [CHART_GRANULARITY_WEEKLY]: "device.chart.lastWindow.weekly",
-  [CHART_GRANULARITY_MONTHLY]: "device.chart.lastWindow.monthly",
-};
-
-/**
- * Navigation identifiers of the param whose data the chart shows.
- */
 interface UseTimeSeriesChartParams {
   nodeId?: string;
   deviceName?: string;
   paramName?: string;
 }
 
-/**
- * Collects every raw point of a paginated simple_ts response, following
- * `fetchNext` up to {@link TS_MAX_PAGE_FETCHES} pages as a memory guard.
- * @param firstPage - The first response page
- * @returns All numeric points, timestamps converted to milliseconds
- */
-const collectSimpleTSPoints = async (
-  firstPage: ESPCDFSimpleTSDataResponse
-): Promise<TimeSeriesPoint[]> => {
-  const points: TimeSeriesPoint[] = [];
-  let page: ESPCDFSimpleTSDataResponse | undefined = firstPage;
-  let fetches = 1;
+/** Content of a non-ready chart state. */
+export interface ChartEmptyContent {
+  /** Which state (see `TS_EMPTY_KIND_*`) */
+  kind: string;
+  /** Headline */
+  title: string;
+  /** Detail or error message */
+  description?: string;
+}
 
-  while (page) {
-    for (const item of page.tsData) {
-      const value = Number(item.value);
-      if (Number.isFinite(value)) {
-        points.push({ timestampMs: item.timestamp * 1000, value });
-      }
-    }
-    if (page.hasNext && page.fetchNext && fetches < TS_MAX_PAGE_FETCHES) {
-      page = await page.fetchNext();
-      fetches += 1;
-    } else {
-      page = undefined;
-    }
-  }
-  return points;
-};
+/** Footnote shown under the chart. */
+export interface ChartNote {
+  /** Note kind (i18n under `device.chart.notes.*`) */
+  kind: string;
+  /** Interpolation values for the note */
+  values?: Record<string, number>;
+}
 
 /**
- * Drives the revamped time-series chart screen: resolves the device param
- * from the store, owns the granularity tab / window paging / bar selection
- * state, fetches one window of data per change, and reduces both param
- * variants (`time_series` server aggregation, `simple_ts` client-side
- * bucketing) into the same bucket model consumed by the presentation layer.
- * @param params - Navigation identifiers (`nodeId`, `deviceName`, `paramName`)
- * @returns Everything the Chart screen renders (see UseTimeSeriesChartResult)
+ * Business logic of the time series chart screen. Composes the user's
+ * selection (`useChartView`) with the data of that selection
+ * (`useTimeSeriesRange`) and shapes both for the screen: chart points, state,
+ * empty-state copy, footnotes, labels and units.
+ *
+ * Switching the statistic never refetches on backends that pre-compute every
+ * statistic (classic DynamoDB, Neo); on classic Timestream each statistic is
+ * one request, cached once fetched.
+ * @param params - Route params identifying the param
+ * @returns Grouped chart state and actions for the screen
  */
 export const useTimeSeriesChart = ({
   nodeId,
   deviceName,
   paramName,
-}: UseTimeSeriesChartParams): UseTimeSeriesChartResult => {
-  const { t } = useTranslation();
+}: UseTimeSeriesChartParams) => {
+  const { t, i18n } = useTranslation();
   const { store } = useCDF();
 
   const node = store?.nodeStore?.nodesByIDMap?.[nodeId || ""];
   const device = node?.devices?.find((d) => d.name === deviceName);
-  const param: ESPCDFDeviceParam | null =
-    device?.params?.find((p) => p.name === paramName) || null;
+  const param = device?.params?.find((p) => p.name === paramName) || null;
+  const isWriteableParam = !!param?.properties?.includes(WRITE_PERMISSION);
 
-  const [granularity, setGranularity] = useState<ChartGranularity>(
-    CHART_GRANULARITY_DAILY
+  const provider = useMemo(() => getTimeSeriesProvider(param), [param]);
+  const modes = useMemo(
+    () => (provider ? availableModes(provider) : []),
+    [provider],
   );
-  const [windowOffset, setWindowOffset] = useState(0);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [buckets, setBuckets] = useState<TimeSeriesBucket[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const hasTimeSeries = !!provider && modes.length > 0;
+  /** Identity of the charted param; store refreshes may recreate the object. */
+  const paramKey = `${nodeId}|${deviceName}|${paramName}|${provider?.id}|${modes.join(",")}`;
 
-  const aggregation = resolveAggregation(param?.dataType, param?.type);
+  const view = useChartView({ modes, paramKey });
+  const { mode, range, stat, setStat, selectMode } = view;
+  const { fetched, loading, error } = useTimeSeriesRange({
+    provider,
+    mode,
+    range,
+    stat,
+    paramKey,
+  });
 
-  const supportsServerAggregation =
-    (param?.properties?.includes(ESPRM_PARAM_TIME_SERIES_PROPERTY) ?? false) &&
-    typeof param?.getTSData === "function";
-  const supportsSimpleTS =
-    (param?.properties?.includes(ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY) ??
-      false) &&
-    typeof param?.getSimpleTSData === "function";
-  const isSupported = supportsServerAggregation || supportsSimpleTS;
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  const boundaries = useMemo(
-    () => computeWindowBuckets(granularity, windowOffset, Date.now()),
-    [granularity, windowOffset]
-  );
-
+  /** Single-stat backends need a statistic before the first fetch. */
   useEffect(() => {
-    if (!param || !isSupported) {
-      return;
-    }
-    let cancelled = false;
+    if (!provider) return;
+    setStat((current) =>
+      current && provider.limits.stats.includes(current)
+        ? current
+        : defaultStat(provider.limits.stats, false),
+    );
+  }, [provider, setStat]);
 
-    /**
-     * Fetches the visible window and reduces it into buckets, preferring
-     * server-side aggregation when the param supports it.
-     */
-    const fetchWindow = async (): Promise<void> => {
-      setLoading(true);
-      setError(null);
-      try {
-        const windowStartSec = Math.floor(boundaries[0].start / 1000);
-        const windowEndMs = Math.min(
-          boundaries[boundaries.length - 1].end,
-          Date.now()
-        );
-        const windowEndSec = Math.floor(windowEndMs / 1000);
-
-        let nextBuckets: TimeSeriesBucket[];
-        if (supportsServerAggregation && param.getTSData) {
-          const request: ESPCDFTSDataRequest = {
-            startTime: windowStartSec,
-            endTime: windowEndSec,
-            aggregate: aggregation,
-            aggregationInterval: GRANULARITY_TO_INTERVAL[granularity],
-            descOrder: false,
-            timezone: canonicalizeIana(
-              Intl.DateTimeFormat().resolvedOptions().timeZone
-            ),
-          };
-          if (request.aggregationInterval === ESPCDFAggregationInterval.Week) {
-            request.weekStart = ESPCDFWeekStart.Monday;
-          }
-          const response = await param.getTSData(request);
-          const points = await collectSimpleTSPoints(response);
-          nextBuckets = mapAggregatedPointsToBuckets(points, boundaries);
-        } else {
-          const request: ESPCDFSimpleTSDataRequest = {
-            startTime: windowStartSec,
-            endTime: windowEndSec,
-            resultCount: TS_PAGE_RESULT_COUNT,
-          };
-          const response = await param.getSimpleTSData!(request);
-          const points = await collectSimpleTSPoints(response);
-          nextBuckets = reducePointsIntoBuckets(points, boundaries, aggregation);
-        }
-
-        if (!cancelled) {
-          setBuckets(nextBuckets);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err : new Error(String(err)));
-          setBuckets([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchWindow();
-    return () => {
-      cancelled = true;
-    };
-    // boundaries derives from granularity/windowOffset (already listed);
-    // aggregation/support flags derive from param.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
-  }, [param, granularity, windowOffset]);
-
-  const summary = useMemo(
-    () => summarizeBuckets(buckets, aggregation),
-    [buckets, aggregation]
+  const isCumulative = useMemo(
+    () => bucketsAreCumulative(fetched.buckets),
+    [fetched.buckets],
+  );
+  const statOptions = useMemo(
+    () => (provider ? resolveStatOptions(provider, isCumulative) : []),
+    [provider, isCumulative],
   );
 
-  const hasData = useMemo(
-    () => buckets.some((bucket) => bucket.value !== null),
-    [buckets]
+  /** Keeps the statistic valid for the buckets on screen; meters default to consumption. */
+  useEffect(() => {
+    if (statOptions.length === 0) return;
+    setStat((current) =>
+      current && statOptions.includes(current)
+        ? current
+        : defaultStat(statOptions, isCumulative),
+    );
+  }, [statOptions, isCumulative, setStat]);
+
+  const chartData: ChartDataPoint[] = useMemo(() => {
+    if (!mode || !range) return [];
+    if (isWindowMode(mode)) {
+      if (!stat) return [];
+      return projectBuckets(fetched.buckets, stat, mode, range.start, range.end);
+    }
+    return samplesToPoints(downsampleLTTB(fetched.samples, RAW_RENDER_SAMPLES));
+  }, [mode, range, stat, fetched]);
+
+  const hasValues = useMemo(
+    () => chartData.some((point) => point.value !== null),
+    [chartData],
   );
 
   const chartState: ChartState = useMemo(() => {
-    if (!isSupported) return CHART_STATE_UNSUPPORTED;
-    if (loading) return CHART_STATE_LOADING;
-    if (error) return CHART_STATE_ERROR;
-    if (!hasData) return CHART_STATE_EMPTY;
-    return CHART_STATE_READY;
-  }, [isSupported, loading, error, hasData]);
+    if (!hasTimeSeries) return "unsupported";
+    if (loading) return "loading";
+    if (error) return "error";
+    if (fetched.plan === TS_FETCH_PLAN_UNSUPPORTED) return "unsupported";
+    if (!hasValues) return "empty";
+    return "ready";
+  }, [hasTimeSeries, loading, error, fetched.plan, hasValues]);
 
-  const chartStateLabelMap: Record<Exclude<ChartState, "ready">, string> = {
-    loading: t("device.chart.loadingChartData"),
-    error: t("device.chart.errorLoadingData", { message: error?.message }),
-    unsupported: t("device.chart.notSupported"),
-    empty: t("device.chart.noDataAvailable"),
-  };
+  /** Tips appear after the first successful render and step aside for empty and error states. */
+  const [hasRenderedChart, setHasRenderedChart] = useState(false);
+  useEffect(() => {
+    setHasRenderedChart(false);
+  }, [paramKey]);
+  useEffect(() => {
+    if (chartState === "ready") setHasRenderedChart(true);
+  }, [chartState]);
+  const showTips =
+    hasRenderedChart && (chartState === "ready" || chartState === "loading");
 
-  const rangeLabel = useMemo(() => {
-    if (windowOffset === 0) {
-      return t(GRANULARITY_TO_LAST_WINDOW_KEY[granularity], {
-        count: CHART_WINDOW_BUCKET_COUNT,
+  /** Headline and detail for the non-ready chart states. */
+  const emptyState: ChartEmptyContent | null = useMemo(() => {
+    if (chartState === "ready" || chartState === "loading") return null;
+    if (!hasTimeSeries) {
+      return {
+        kind: TS_EMPTY_KIND_NO_TIME_SERIES,
+        title: t("device.chart.empty.noTimeSeriesTitle"),
+        description: t("device.chart.empty.noTimeSeriesDescription"),
+      };
+    }
+    if (chartState === "error") {
+      return {
+        kind: TS_EMPTY_KIND_ERROR,
+        title: t("device.chart.empty.errorTitle"),
+        description: error?.message,
+      };
+    }
+    if (chartState === "unsupported") {
+      return {
+        kind: TS_EMPTY_KIND_UNSUPPORTED,
+        title: t("device.chart.empty.unsupportedTitle"),
+        description: t("device.chart.empty.unsupportedDescription"),
+      };
+    }
+    return {
+      kind: TS_EMPTY_KIND_NO_DATA,
+      title: t("device.chart.empty.noDataTitle"),
+      description: t("device.chart.empty.noDataDescription"),
+    };
+  }, [chartState, hasTimeSeries, error, t]);
+
+  const notes: ChartNote[] = useMemo(() => {
+    const list: ChartNote[] = [];
+    if (chartState !== "ready") return list;
+    if (fetched.plan === TS_FETCH_PLAN_RAW && fetched.truncated) {
+      list.push({
+        kind: TS_NOTE_RAW_TRUNCATED,
+        values: { shown: fetched.samples.length },
       });
     }
-    return formatWindowRangeLabel(
-      boundaries[0].start,
-      boundaries[boundaries.length - 1].end,
-      t("device.chart.rangeSeparator")
-    );
-  }, [windowOffset, granularity, boundaries, t]);
+    if (fetched.plan === TS_FETCH_PLAN_RAW && fetched.samples.length > RAW_RENDER_SAMPLES) {
+      list.push({
+        kind: TS_NOTE_DOWNSAMPLED,
+        values: { total: fetched.samples.length, shown: RAW_RENDER_SAMPLES },
+      });
+    }
+    return list;
+  }, [chartState, fetched]);
 
-  const onSelectGranularity = useCallback((next: ChartGranularity) => {
-    setGranularity(next);
-    setWindowOffset(0);
-    setSelectedIndex(null);
-  }, []);
+  const rangeLabel = useMemo(() => {
+    if (!range) return "";
+    const description = describeRange(range, Date.now(), i18n.language, mode ?? undefined);
+    return description.current
+      ? t(`device.chart.range.current.${range.unit}`)
+      : description.text;
+  }, [range, mode, i18n.language, t]);
 
-  const onPreviousWindow = useCallback(() => {
-    setWindowOffset((offset) => offset + 1);
-    setSelectedIndex(null);
-  }, []);
+  /** Tooltip unit: counts are unitless, and a boolean plotted as 0/1 has no unit either. */
+  const valueUnit =
+    (mode && isWindowMode(mode) && stat === TS_STAT_COUNT) ||
+    param?.dataType === DATA_TYPE_BOOL
+      ? ""
+      : getParamUnit(param);
 
-  const onNextWindow = useCallback(() => {
-    setWindowOffset((offset) => Math.max(0, offset - 1));
-    setSelectedIndex(null);
-  }, []);
+  /** Every bucket owns an equal slot; labels are thinned so they never bunch up. */
+  const xAxis = useMemo(
+    () => (mode && range ? resolveXAxis(mode, range) : undefined),
+    [mode, range],
+  );
 
-  const onSelectBar = useCallback((index: number) => {
-    setSelectedIndex((current) => (current === index ? null : index));
-  }, []);
+  /**
+   * Raw samples can be zoomed into; the axis of the visible window follows
+   * the same rules as a whole range (round clock times, weekdays over days).
+   */
+  const zoom: ChartZoom | undefined = useMemo(() => {
+    if (mode !== TS_MODE_RAW || !range) return undefined;
+    return {
+      minSpanMs: RAW_ZOOM_MIN_SPAN_MS,
+      axisFor: (start, end) => ({
+        ticks: rawXTicks(start, end),
+        formatLabel: createXLabelFormatter(
+          resolveXLabelKind(mode, { ...range, start, end }),
+          i18n.language,
+        ),
+      }),
+    };
+  }, [mode, range, i18n.language]);
+
+  /** Axis labels follow what the buckets represent (hours, days, weeks, months). */
+  const formatXLabel = useMemo(
+    () =>
+      mode && range
+        ? createXLabelFormatter(resolveXLabelKind(mode, range), i18n.language)
+        : undefined,
+    [mode, range, i18n.language],
+  );
 
   return {
-    title: paramName || t("device.chart.title"),
-    granularity,
-    buckets,
-    summary,
-    unit: getParamUnit(param?.type),
-    rangeLabel,
-    chartState,
-    chartStateLabelMap,
-    loading,
-    canGoNext: windowOffset > 0,
-    selectedIndex,
-    labelEveryNth: GRANULARITY_TO_LABEL_EVERY_NTH[granularity],
-    onSelectGranularity,
-    onPreviousWindow,
-    onNextWindow,
-    onSelectBar,
+    param,
+    isWriteableParam,
+    hasTimeSeries,
+
+    /** What the user selected */
+    selection: {
+      modes,
+      mode,
+      presets: view.presets,
+      range,
+      rangeLabel,
+      canNavigateNext: view.canNavigateNext,
+      stat,
+      statOptions,
+      showStatDropdown: !!mode && isWindowMode(mode) && statOptions.length > 0,
+      chartType: view.chartType,
+      calendarVisible: view.calendarVisible,
+    },
+
+    /** What the chart shows */
+    chart: {
+      data: chartData,
+      state: chartState,
+      emptyState,
+      notes,
+      showTips,
+      loading,
+      valueUnit,
+      formatXLabel,
+      xAxis,
+      zoom,
+    },
+
+    scrollViewRef,
+
+    actions: {
+      selectMode,
+      selectPreset: view.selectPreset,
+      previous: view.previous,
+      next: view.next,
+      selectCustomRange: view.selectCustomRange,
+      selectStat: setStat,
+      toggleCalendar: view.toggleCalendar,
+      closeCalendar: view.closeCalendar,
+      setChartType: view.setChartType,
+      maxEndFor: view.maxEndFor,
+    },
   };
 };

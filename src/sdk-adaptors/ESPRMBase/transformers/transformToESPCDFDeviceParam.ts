@@ -4,60 +4,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { ESPCDFDeviceParam, ESPCDFSimpleTSDataRequest, ESPCDFTSDataRequest } from "@store";
-import { ESPRMDeviceParam, ESPRawTSDataRequest, ESPTSDataRequest } from "@espressif/rainmaker-base-sdk";
+import { ESPCDFDeviceParam, type ESPCDFDeviceParamOperation } from "@store";
+import type { ESPRMDeviceParam } from "@espressif/rainmaker-base-sdk";
+import { attachTimeSeriesProvider } from "@shared/timeSeries";
 
-import {
-    ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY,
-    ESPRM_PARAM_TIME_SERIES_PROPERTY,
-} from "../constants";
-import {
-    toCDFResponseFromRMAggregates,
-    toRMAggregatesRequest,
-} from "../utils/timeSeriesMapper";
+import { createRMTimeSeriesProvider } from "../utils/timeSeriesProvider";
 
+/**
+ * Maps a classic RainMaker device param to an `ESPCDFDeviceParam`. Params
+ * declaring `time_series` (Timestream) or `simple_ts` (DynamoDB pre-compute)
+ * get a time series provider attached, which the chart reads through
+ * `getTimeSeriesProvider`.
+ * @param param - Classic SDK device param
+ * @returns CDF device param with bound operations
+ */
 export function transformToESPCDFDeviceParam(
     param: ESPRMDeviceParam,
 ): ESPCDFDeviceParam {
-    const operations = {
-        setValue: async (value: any) => {
-            return param.setValue(value);
-        },
-        getSimpleTSData: async (request: ESPCDFSimpleTSDataRequest) => {
-            return param.getSimpleTSData(request);
-        },
-        getRawTSData: async (request: ESPCDFTSDataRequest) => {
-            return param.getRawTSData(request as ESPRawTSDataRequest);
-        },
-        getTSData: async (request: ESPCDFTSDataRequest) => {
-            // `time_series` params keep the classic endpoint — it honors the
-            // request's timezone/weekStart, which the fixed server windows of
-            // the aggregates endpoint cannot. The aggregates path serves
-            // simple_ts-only params, whose endpoint cannot aggregate.
-            const properties = param.properties ?? [];
-            if (
-                !properties.includes(ESPRM_PARAM_TIME_SERIES_PROPERTY) &&
-                properties.includes(ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY) &&
-                request.aggregationInterval
-            ) {
-                const response = await param.getSimpleTSDataAggregates(
-                    toRMAggregatesRequest(request),
-                );
-                return toCDFResponseFromRMAggregates(response, request);
-            }
-            return param.getTSData(request as ESPTSDataRequest);
-        },
+    const provider = createRMTimeSeriesProvider(param);
+    const operations: ESPCDFDeviceParamOperation = {
+        setValue: async (value: unknown) => param.setValue(value),
     };
-    return new ESPCDFDeviceParam({
+    const cdfParam = new ESPCDFDeviceParam({
         name: param.name || "",
         dataType: param.dataType || "string",
         type: param.type || "",
         value: param.value,
-        properties: Array.isArray( param.properties) ?  param.properties : [],
+        properties: Array.isArray(param.properties) ? param.properties : [],
         uiType: param.uiType,
         bounds: param.bounds,
-        deviceName: (param as any).deviceName, // Preserve deviceName
-        operations: operations,
+        deviceName: (param as { deviceName?: string }).deviceName, // Preserve deviceName
+        operations,
         _raw: param,
     });
+    if (provider) {
+        attachTimeSeriesProvider(cdfParam, provider);
+    }
+    return cdfParam;
 }

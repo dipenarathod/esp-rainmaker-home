@@ -520,6 +520,14 @@ export const QA_DEVICE_PANEL_NO_PARAMS_EMPTY_STATE =
 
 // GUIDE SCREEN — QA / test ids
 export const QA_GUIDE_LOAD_FAILED_EMPTY_STATE = "empty_state_guide_load_failed";
+// Time series chart
+export const QA_CHART_EMPTY_STATE = "empty_state_chart";
+export const QA_CHART_WINDOW_TAB_PREFIX = "tab_chart_window_";
+export const QA_CHART_PRESET_PREFIX = "chip_chart_preset_";
+export const QA_CHART_RANGE_PREVIOUS = "button_chart_range_previous";
+export const QA_CHART_RANGE_NEXT = "button_chart_range_next";
+export const QA_CHART_RANGE_LABEL = "button_chart_range_label";
+export const QA_CHART_STAT_DROPDOWN = "button_chart_stat_dropdown";
 export const QA_GUIDE_LOAD_FAILED_TITLE = "text_title_guide_load_failed";
 export const QA_GUIDE_LOAD_FAILED_DESCRIPTION =
   "text_description_guide_load_failed";
@@ -879,6 +887,64 @@ export const POLLING = {
   DEFAULT_LABEL: "Polling",
   NODE_CONFIG_LABEL: "Node config",
 };
+// TIME SERIES CHART: WINDOWS (server aggregation buckets shared by RainMaker classic DynamoDB, classic Timestream and Neo)
+export const TS_WINDOW_HOURLY = "hourly";
+export const TS_WINDOW_DAILY = "daily";
+export const TS_WINDOW_WEEKLY = "weekly";
+export const TS_WINDOW_MONTHLY = "monthly";
+export const TS_WINDOWS = [
+  TS_WINDOW_HOURLY,
+  TS_WINDOW_DAILY,
+  TS_WINDOW_WEEKLY,
+  TS_WINDOW_MONTHLY,
+] as const;
+/** Chart tab that plots unaggregated samples instead of a window. */
+export const TS_MODE_RAW = "raw";
+
+// TIME SERIES CHART: BUCKET STATISTICS (the aggregator dropdown)
+export const TS_STAT_AVG = "avg";
+export const TS_STAT_MIN = "min";
+export const TS_STAT_MAX = "max";
+export const TS_STAT_COUNT = "count";
+export const TS_STAT_SUM = "sum";
+export const TS_STAT_FIRST = "first";
+export const TS_STAT_LAST = "last";
+/** Latest absolute meter reading of a cumulative (energy-style) parameter. */
+export const TS_STAT_READING = "reading";
+export const TS_STATS = [
+  TS_STAT_AVG,
+  TS_STAT_MIN,
+  TS_STAT_MAX,
+  TS_STAT_COUNT,
+  TS_STAT_SUM,
+  TS_STAT_FIRST,
+  TS_STAT_LAST,
+  TS_STAT_READING,
+] as const;
+
+// TIME SERIES CHART: PROVIDER IDENTIFIERS (which backend read model serves a param)
+export const TS_PROVIDER_RM_TIMESTREAM = "rm-timestream";
+export const TS_PROVIDER_RM_DYNAMO = "rm-dynamo";
+export const TS_PROVIDER_NEO = "neo";
+
+// TIME SERIES CHART: RANGE UNITS (calendar units a chart range is aligned to and stepped by)
+export const TS_RANGE_UNIT_HOUR = "hour";
+export const TS_RANGE_UNIT_DAY = "day";
+export const TS_RANGE_UNIT_WEEK = "week";
+export const TS_RANGE_UNIT_MONTH = "month";
+
+// TIME SERIES CHART: CALENDAR
+/** How many years back the custom range calendar can scroll. */
+export const TS_CALENDAR_LOOKBACK_YEARS = 5;
+
+// TIME SERIES CHART: BACKEND STATUS VALUES
+/** Classic DynamoDB aggregates mark the in-progress window with this status. */
+export const TS_BUCKET_STATUS_LIVE = "latest";
+
+// Chart Types
+export const CHART_TYPE_BAR = "bar";
+export const CHART_TYPE_LINE = "line";
+
 // WebRTC Connection State constants
 export const WEBRTC_CONNECTION_STATE = {
   CONNECTED: "connected",

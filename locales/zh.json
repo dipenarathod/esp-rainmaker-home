@@ -954,26 +954,71 @@
     },
     "chart": {
       "title": "图表",
-      "errorLoadingData": "加载数据时出错：{{message}}",
-      "loadingChartData": "正在加载图表数据...",
-      "noDataAvailable": "没有可用数据",
-      "notSupported": "该参数不支持图表",
-      "noValue": "--",
-      "rangeSeparator": "至",
-      "tabs": {
-        "daily": "按日",
+      "value": "值",
+      "types": "类型",
+      "selectDateRange": "选择日期范围",
+      "valueUpdated": "值已更新",
+      "valueUpdatedSuccessfully": "值更新成功",
+      "failedToUpdateValue": "更新值失败",
+      "updateError": "更新值时出错",
+      "chartHeader": {
+        "cancel": "取消",
+        "save": "保存",
+        "saving": "正在保存...",
+        "enterValue": "输入值"
+      },
+      "aggregation": {
+        "avg": "平均",
+        "min": "最小",
+        "max": "最大",
+        "count": "计数",
+        "sum": "总和",
+        "first": "首值",
+        "last": "末值",
+        "reading": "表计读数"
+      },
+      "window": {
+        "hourly": "按小时",
+        "daily": "按天",
         "weekly": "按周",
-        "monthly": "按月"
+        "monthly": "按月",
+        "raw": "原始"
       },
-      "lastWindow": {
-        "daily": "最近 {{count}} 天",
-        "weekly": "最近 {{count}} 周",
-        "monthly": "最近 {{count}} 个月"
+      "preset": {
+        "1h": "1小时",
+        "6h": "6小时",
+        "24h": "24小时",
+        "1d": "1天",
+        "7d": "7天",
+        "4w": "4周",
+        "1y": "1年"
       },
-      "proTipLabel": "小提示：",
-      "proTipText": "轻点柱形即可查看对应数值。",
-      "disclaimerLabel": "免责声明：",
-      "disclaimerText": "数值基于设备上报数据估算，实际数据可能有所差异。"
+      "range": {
+        "current": {
+          "hour": "本小时",
+          "day": "今天",
+          "week": "本周",
+          "month": "本月"
+        }
+      },
+      "notes": {
+        "rawTruncated": "仅显示最新的 {{shown}} 个样本；此范围内更早的样本未加载",
+        "downsampled": "为便于显示，已从 {{total}} 个点降采样至 {{shown}} 个"
+      },
+      "tips": {
+        "tipLabel": "小提示：",
+        "tip": "长按图表可查看该点的数值。",
+        "zoomTip": "双指缩放或双击可放大密集区域；再次双击可重置。"
+      },
+      "empty": {
+        "noTimeSeriesTitle": "没有时间序列数据",
+        "noTimeSeriesDescription": "此参数不上报历史数值。",
+        "noDataTitle": "此范围内没有数据",
+        "noDataDescription": "设备在所选范围内没有上报数据，请尝试其他范围或时间窗口。",
+        "unsupportedTitle": "不支持此范围",
+        "unsupportedDescription": "后端无法为所选时间窗口提供此范围，请选择更短的范围。",
+        "errorTitle": "无法加载图表数据"
+      }
     }
   },
   "scene": {
@@ -1501,7 +1546,9 @@
     "close": "关闭",
     "continue": "继续",
     "confirm": "确认",
-    "clear": "清除"
+    "clear": "清除",
+    "notAvailable": "暂无",
+    "enterText": "请输入文本"
   },
   "landing": {
     "title": "欢迎",
