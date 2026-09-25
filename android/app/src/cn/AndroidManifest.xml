@@ -20,6 +20,16 @@
             tools:replace="android:value" />
 
         <!--
+          Belt-and-braces for the CN Firebase exclusion. The Crashlytics gradle
+          plugin is already gated to non-CN builds, but autolinking still links
+          the RNFirebase module into every variant, so pin collection off here
+          too: CN must never attempt to report to Google.
+        -->
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+
+        <!--
           WeChat OAuth callback activity. The WeChat SDK delivers the auth result
           to the component named <applicationId>.wxapi.WXEntryActivity. The real
           class lives in the stable com.app.wechat package; the alias below

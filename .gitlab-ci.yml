@@ -5,6 +5,7 @@ stages:
   - build
   - test
   - deploy
+  - archive
 
 variables:
   LANG: en_US.UTF-8
@@ -185,6 +186,8 @@ android_apk:
   stage: build
   tags: [mac-mobile-runner]
   interruptible: true
+  # Cold builds already take up to ~58 min on this runner, just under the 1h default.
+  timeout: 90m
   needs:
     - job: code_quality
       optional: true
@@ -244,9 +247,29 @@ android_apk:
     - bundle install
     - bundle exec fastlane android apk flavor:${APP_FLAVOR}
 
+    # Archive the Hermes source map (see docs/CRASH_SYMBOLICATION.md); warn, never fail.
+    - |
+      cd "${CI_PROJECT_DIR}"
+      MAP="android/app/build/generated/sourcemaps/react/${APP_FLAVOR}Release/index.android.bundle.map"
+      # Stamp the version in, matching iOS. Crashlytics shows "6.0.1 (51)", so the
+      # archived name is index.android.bundle.global.6.0.1-51.map and picking the
+      # right map is just reading two numbers off the crash report. Prebuild has
+      # already synced these from .env into gradle.properties by this point.
+      APP_VER="$(grep -m1 '^APP_VERSION=' android/gradle.properties | cut -d= -f2 | tr -d '[:space:]')"
+      VER_CODE="$(grep -m1 '^ANDROID_VERSION_CODE=' android/gradle.properties | cut -d= -f2 | tr -d '[:space:]')"
+      OUT="index.android.bundle.${APP_FLAVOR}.${APP_VER:-unknown}-${VER_CODE:-0}.map"
+      if [ -f "${MAP}" ]; then
+        mkdir -p artifacts/sourcemaps
+        cp "${MAP}" "artifacts/sourcemaps/${OUT}"
+        echo "Archived source map for ${APP_FLAVOR}: ${OUT}"
+      else
+        echo "WARNING: source map not found at ${MAP} — release crashes for this build cannot be symbolicated"
+      fi
+
   artifacts:
     paths:
       - artifacts/android/
+      - artifacts/sourcemaps/
     expire_in: 1 day
 
 ###############################################################
@@ -311,16 +334,87 @@ ios_ipa:
       inject_active_sdk .env.global
       cp .env.global .env
 
+      # Secure File GoogleService-Info-Global.plist — resolve_ci_env already
+      # ran download_secure_files, so .secure_files/ is populated. Placed
+      # before prebuild:ios so sync-env-to-ios.js sees the real plist and
+      # skips the template fallback. Non-default filename is deliberate —
+      # see ios/APP/AppDelegate.mm (keeps RNFB iOS auto-init off on CN).
+      if [ ! -f .secure_files/GoogleService-Info-Global.plist ]; then
+        echo "ERROR: Secure File GoogleService-Info-Global.plist not found"
+        exit 1
+      fi
+      umask 077
+      cp .secure_files/GoogleService-Info-Global.plist ios/APP/GoogleService-Info-Global.plist
+      test -s ios/APP/GoogleService-Info-Global.plist
+      plutil -lint ios/APP/GoogleService-Info-Global.plist
+
       npm run prebuild:ios
 
       cd ios/fastlane
       bundle install --jobs 4 --retry 3
       bundle exec fastlane ios adhoc
 
+    # Resolves JS bundle offsets in Crashlytics back to file and line — see
+    # docs/CRASH_SYMBOLICATION.md. Warn rather than fail: a missing map must not
+    # break a build that produced a signed IPA.
+    - |
+      cd "${CI_PROJECT_DIR}"
+      # ios/.xcode.env stamps the version in: main.jsbundle.<version>-<build>.map.
+      # Glob so the name is not duplicated here; it also matches the old fixed name.
+      MAP="$(ls -1t ios/build/main.jsbundle*.map 2>/dev/null | head -1)"
+      if [ -n "${MAP}" ]; then
+        mkdir -p artifacts/sourcemaps
+        cp "${MAP}" "artifacts/sourcemaps/$(basename "${MAP}")"
+        echo "Archived iOS source map: $(basename "${MAP}")"
+      else
+        echo "WARNING: no source map at ios/build/main.jsbundle*.map — release JS crashes for this build cannot be symbolicated"
+      fi
+
   artifacts:
     paths:
       - artifacts/ios/
+      - artifacts/sourcemaps/
     expire_in: 1 day
+
+###############################################################
+# SOURCE MAPS — republished alone so they can outlive the build.
+# GitLab allows one expire_in per job, and a map is ~30 MB against a
+# 150-280 MB APK, so keeping both together would pin the binaries too.
+# Split per platform so an iOS failure still leaves the Android maps.
+###############################################################
+
+android_sourcemap:
+  stage: archive
+  tags: [mac-mobile-runner]
+  interruptible: true
+  before_script: []
+  needs:
+    - job: android_apk
+      artifacts: true
+  script:
+    # mkdir first: the build only warns when no map was produced.
+    - mkdir -p artifacts/sourcemaps
+    - ls -lh artifacts/sourcemaps
+  artifacts:
+    paths:
+      - artifacts/sourcemaps/
+    expire_in: 30 days
+
+ios_sourcemap:
+  stage: archive
+  tags: [mac-mini-runner]
+  interruptible: true
+  before_script: []
+  needs:
+    - job: ios_ipa
+      artifacts: true
+  script:
+    - mkdir -p artifacts/sourcemaps
+    - ls -lh artifacts/sourcemaps
+  artifacts:
+    paths:
+      - artifacts/sourcemaps/
+    expire_in: 30 days
 
 ###############################################################
 # DEVICE TESTS — one harness, parameterized per platform

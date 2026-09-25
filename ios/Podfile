@@ -56,6 +56,12 @@ target 'APP' do
   # whose non-modular dependencies cannot integrate as static libraries.
   pod 'GoogleSignIn', '~> 7.1'
 
+  # Firebase's Swift pods import these C libraries, which ship no module maps.
+  # Per-pod rather than a global use_modular_headers!, which would affect all pods.
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'GoogleDataTransport', :modular_headers => true
+  pod 'nanopb', :modular_headers => true
+
   post_install do |installer|
     react_native_post_install(
       installer,

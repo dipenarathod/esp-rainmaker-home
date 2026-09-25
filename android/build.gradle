@@ -17,7 +17,10 @@ buildscript {
         classpath('com.android.tools.build:gradle')
         classpath('com.facebook.react:react-native-gradle-plugin')
         classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-        classpath 'com.google.gms:google-services:4.4.3'
+        classpath 'com.google.gms:google-services:4.5.0'
+        // Applied per-flavor in app/build.gradle (non-CN only). Uploads the R8
+        // mapping so obfuscated native frames are readable in Crashlytics.
+        classpath 'com.google.firebase:firebase-crashlytics-gradle:3.0.8'
     }
 }
 

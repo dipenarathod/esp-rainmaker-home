@@ -3,13 +3,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Download a GitLab Secure File into the repo root. Used by the `env:pull:*`
- * npm scripts so developers can refresh .env.global / .env.cn / .env.web
- * without hand-copying values. CI uses the download-secure-files installer
- * directly in .gitlab-ci.yml — this script is for local dev only.
+ * Download a GitLab Secure File. Used by the `env:pull:*` and `plist:pull:*`
+ * npm scripts so developers can refresh .env.global / .env.cn / .env.web and
+ * ios/APP/GoogleService-Info-Global.plist without hand-copying values. CI
+ * uses the download-secure-files installer directly in .gitlab-ci.yml — this
+ * script is for local dev only.
  *
  * Usage:
- *   node scripts/env-pull.js <.env.name>
+ *   node scripts/env-pull.js <secure-file-name> [out-path]
+ *
+ * When out-path is omitted, writes to the repo root under the Secure File's
+ * own name.
  *
  * Env overrides (useful when cloning from the GitHub mirror):
  *   GITLAB_HOST    — override the default GitLab host
@@ -20,8 +24,9 @@ const { execFileSync, spawnSync } = require("child_process");
 const path = require("path");
 
 const name = process.argv[2];
+const outArg = process.argv[3];
 if (!name) {
-  console.error("Usage: node scripts/env-pull.js <.env.name>");
+  console.error("Usage: node scripts/env-pull.js <secure-file-name> [out-path]");
   process.exit(1);
 }
 
@@ -50,7 +55,7 @@ if (!isAuthenticated()) {
   process.exit(1);
 }
 
-const out = path.resolve(name);
+const out = path.resolve(outArg || name);
 console.log(`Fetching ${name} from ${HOST}/${PROJECT}…`);
 
 try {
@@ -68,7 +73,7 @@ try {
     ],
     { stdio: "inherit" }
   );
-  console.log(`✓ Wrote ${name}`);
+  console.log(`✓ Wrote ${path.relative(process.cwd(), out) || name}`);
 } catch (e) {
   console.error(`Failed to download ${name}: ${e.message || e}`);
   process.exit(1);

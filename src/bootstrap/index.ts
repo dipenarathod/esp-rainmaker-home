@@ -14,6 +14,10 @@
  *   - Have no dependency on React state / context
  */
 
+// First, ahead of i18n and the polyfills, so a throw in either is still reported
+// with a JavaScript stack. Safe this early because it needs no polyfill:
+// region.config uses only native wrappers, and RNFirebase ships its own base64.
+import "@src/bootstrap/crashReporting";
 import "@/i18n";
 import "@src/polyfills/init";
 import { Platform } from "react-native";

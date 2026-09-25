@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Placeholder Firebase config so a fresh checkout builds without the real file.
+
+  Deliberately NOT named GoogleService-Info.plist: React Native Firebase
+  auto-configures when a bundle resource by that exact name exists, and CN
+  devices must never initialise Firebase. The non-default name keeps that
+  decision in AppDelegate rather than in RNFirebase's auto-init.
+
+  The real file is a GitLab Secure File (`GoogleService-Info-Global.plist`);
+  CI copies it into place and devs pull it via `npm run plist:pull:ios`. It is
+  gitignored; scripts/sync-env-to-ios.js copies this template when it is absent.
+-->
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>PLACEHOLDER_API_KEY</string>
+	<key>GCM_SENDER_ID</key>
+	<string>000000000000</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.espressif.nova</string>
+	<key>PROJECT_ID</key>
+	<string>placeholder-project-id</string>
+	<key>STORAGE_BUCKET</key>
+	<string>placeholder-project-id.appspot.com</string>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:000000000000:ios:0000000000000000000000</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<false/>
+	<key>IS_GCM_ENABLED</key>
+	<false/>
+	<key>IS_SIGNIN_ENABLED</key>
+	<false/>
+</dict>
+</plist>
