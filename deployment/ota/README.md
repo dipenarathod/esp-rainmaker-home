@@ -29,13 +29,13 @@ ota/
 Related config that lives at the repo root (can't move due to tool requirements):
 
 - `fingerprint.config.js` — `@expo/fingerprint` requires it at the project root
-- `.gitlab-ci.yml` — GitLab requirement; the two `ota_publish_global_*` jobs orchestrate the scripts above
+- `.gitlab-ci.yml` — GitLab requirement; the three `ota_publish_*` jobs (global iOS, global Android, CN Android), all extending the `.ota_publish` template, orchestrate the scripts above
 
 ---
 
 ## Publish flow
 
-CI runs both jobs in parallel (one per platform). Each does:
+CI runs the three publish jobs in parallel — `ota_publish_global_ios`, `ota_publish_global_android`, `ota_publish_cn_android` (see **Regions** below). Each does:
 
 1. **Decode signing key** — the `.ota_signing_key` `!reference` template writes `deployment/ota/certs/private-key.pem` from the `OTA_SIGNING_KEY_PEM` masked variable.
 2. **Read `OTA_VERSION`** — from `package.json`'s `versionCode` field, the single monotonic integer that drives both Android's `versionCode` and the OTA release number. Bumping one file updates both the store binary and the next OTA.
@@ -53,9 +53,24 @@ Signature verification is ON in the app (cert PEM baked into `ios/APP/Supporting
 
 ---
 
+## Regions
+
+Two regions publish OTAs: `global` and `cn`. Both share the same bucket, CloudFront distribution, `APP_ASSETS_URL`, and signing cert — only the S3 prefix differs (`/ota/prod/<region>/…`).
+
+- **`global`** — iOS + Android. Published by `ota_publish_global_ios` and `ota_publish_global_android`.
+- **`cn`** — Android only. Published by `ota_publish_cn_android`. iOS stays on `global` because there is a single iOS binary that resolves region at runtime (`config/region.config.ts` → `getActiveRegion`); its OTA URL is in `ios/APP/Supporting/Expo.plist`.
+
+Android has two product flavors (`global`, `cn`). The main `AndroidManifest.xml` sets the global OTA URL; `android/app/src/cn/AndroidManifest.xml` overrides `EXPO_UPDATE_URL` to the CN prefix with `tools:replace`. Both flavors share the same fingerprint (`@expo/fingerprint` hashes the whole native tree), so the CN APK's `expo-runtime-version` matches what the CN publish job stamps into the manifest.
+
+A CN bundle is built from `.env.cn` (`APP_REGION=cn`) during `expo export`, so the published JS carries `extra.appRegion='cn'` — the CN APK stays on CN cloud / WeChat / CN legal links after an OTA.
+
+---
+
 ## CI variables
 
 All set via GitLab → Settings → CI/CD → Variables. Masked + protected.
+
+The publish job also downloads the `.env.<region>` **Secure File** (Settings → CI/CD → Secure Files) and copies it to `.env` before computing the fingerprint, so the hash matches the one the developer computed locally against the same env. If the Secure File is missing, the job warns and falls back to the committed `.env.<region>.example`.
 
 | Variable | What it is |
 |---|---|
@@ -78,7 +93,10 @@ For local publishes (open-source forkers, or dev-side troubleshooting), copy `de
 
 The client reports this hash on every OTA fetch as `expo-runtime-version`. The manifest carries the matching hash in its `runtimeVersion` field. If they don't match, the client rejects the OTA silently and stays on the embedded bundle — this is what gates OTA compatibility with the store binary.
 
-The hash is written into two native files (`ios/APP/Supporting/Expo.plist` and `android/app/src/main/AndroidManifest.xml`) by `deployment/ota/scripts/sync-runtime-version.js`. Local devs run it as `node deployment/ota/scripts/sync-runtime-version.js`; CI runs it with `--check` so any commit with drift fails fast.
+The hash is written into two native files (`ios/APP/Supporting/Expo.plist` and `android/app/src/main/AndroidManifest.xml`) by `deployment/ota/scripts/sync-runtime-version.js`. Local devs run it as `node deployment/ota/scripts/sync-runtime-version.js`. Drift is checked in two places, neither of them on every commit:
+
+- **CI** runs `--check` inside the OTA publish jobs, which only fire on `release/*` branches — a release cut with drift fails before anything is published.
+- **The husky pre-commit hook** runs the same check locally, but only on `pre-release/*` branches and only when the commit stages a fingerprint input (`ios/`, `android/`, `app.config.ts`, `fingerprint.config.js`, `package.json`, `package-lock.json`, the signing cert). Feature branches may drift freely; sync before cutting the release.
 
 ---
 
@@ -133,10 +151,14 @@ curl -s "https://$CF/ota/prod/global/ios/$FP_IOS/latest/manifest.json" \
   | jq '.runtimeVersion, .id, .launchAsset.url'
 curl -s "https://$CF/ota/prod/global/android/$FP_ANDROID/latest/manifest.json" \
   | jq '.runtimeVersion, .id, .launchAsset.url'
+curl -s "https://$CF/ota/prod/cn/android/$FP_ANDROID/latest/manifest.json" \
+  | jq '.runtimeVersion, .id, .launchAsset.url'
 
 # Client-facing flat URL — only works after the CloudFront routing Function is deployed
 curl -sI -H "expo-runtime-version: $FP_IOS" \
   "https://$CF/ota/prod/global/ios/manifest.json"
+curl -sI -H "expo-runtime-version: $FP_ANDROID" \
+  "https://$CF/ota/prod/cn/android/manifest.json"
 ```
 
 On a device, the two-launch test:

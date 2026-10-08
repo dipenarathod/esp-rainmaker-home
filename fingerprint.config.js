@@ -33,7 +33,6 @@ module.exports = {
     '**/android/local.properties',
     '**/android/keystore.properties',
     '**/android/app/release.*.keystore',
-    '**/android/app/google-services.json',
     '**/android/app/sign/**/*',
     '**/android/.idea/**/*',
     '**/ios/Podfile.lock',

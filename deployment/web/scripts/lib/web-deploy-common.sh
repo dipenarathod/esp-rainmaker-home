@@ -442,16 +442,19 @@ create_web_cloudfront_invalidation() {
     --output text
 }
 
-# Writes .env.web from FS_ENV_WEB_FILE (CI secret) or verifies a local file exists.
+# Writes .env.web from the Secure File if present; otherwise verifies a local
+# file exists. CI downloads the Secure File via download_secure_files in
+# .gitlab-ci.yml; local devs populate .env.web via `npm run env:pull:web`.
 prepare_web_env_file() {
   local env_web="${ROOT}/.env.web"
+  local secure_env_web="${ROOT}/.secure_files/.env.web"
 
-  if [ -n "${FS_ENV_WEB_FILE:-}" ]; then
+  if [ -f "${secure_env_web}" ]; then
     umask 077
-    printf '%s' "${FS_ENV_WEB_FILE}" | _decode_base64 > "${env_web}"
-    echo "Wrote .env.web from FS_ENV_WEB_FILE"
+    cp "${secure_env_web}" "${env_web}"
+    echo "Wrote .env.web from Secure File"
   elif [ ! -f "${env_web}" ]; then
-    echo "Missing .env.web (local) or FS_ENV_WEB_FILE (CI/CD base64 secret)"
+    echo "Missing .env.web (local) or Secure File .env.web"
     exit 1
   fi
 }

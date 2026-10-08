@@ -79,25 +79,42 @@ workflow:
         echo "ACTIVE_SDK=${ACTIVE_SDK} -> ${env_file}"
       }
 
-      # Decode FS_ENV_<FLAVOR>_FILE when set; otherwise start from the committed
+      # Download all GitLab Secure Files for the project into .secure_files/.
+      # Idempotent: skips when the dir is already populated.
+      # Per-job TMPDIR + bin path so parallel jobs on the same runner (global +
+      # cn android_apk) don't race on the installer's shared mv/exec paths.
+      download_secure_files() {
+        if [ -d ".secure_files" ] && [ -n "$(ls -A .secure_files 2>/dev/null)" ]; then
+          return 0
+        fi
+        local sf_dir
+        sf_dir="$(mktemp -d)"
+        curl --silent --fail \
+          "https://gitlab.com/gitlab-org/incubation-engineering/mobile-devops/download-secure-files/-/raw/main/installer" \
+          | TMPDIR="${sf_dir}" bash -s -- "${sf_dir}/bin"
+        rm -rf "${sf_dir}"
+      }
+
+      # Prefer the Secure File .env.<flavor>; fall back to the committed
       # .env.<flavor>.example. Then fill any missing/empty keys from that example
-      # so CI secrets do not need updating for every new template key.
+      # so secrets do not need updating for every new template key.
       resolve_ci_env() {
         local flavor="$1"
         local region_env=".env.${flavor}"
         local example_env=".env.${flavor}.example"
-        local secret_var="FS_ENV_$(echo "${flavor}" | tr '[:lower:]' '[:upper:]')_FILE"
-        local env_b64="${!secret_var:-}"
+        local secure_env=".secure_files/${region_env}"
 
-        if [ -n "${env_b64}" ]; then
+        download_secure_files
+
+        if [ -f "${secure_env}" ]; then
           umask 077
-          printf '%s' "${env_b64}" | base64 -d > "${region_env}"
-          echo "Decoded CI secret ${secret_var} -> ${region_env}"
+          cp "${secure_env}" "${region_env}"
+          echo "Using Secure File ${region_env}"
         elif [ -f "${example_env}" ]; then
           cp "${example_env}" "${region_env}"
-          echo "WARN: ${secret_var} not set; using ${example_env} as base"
+          echo "WARN: Secure File ${region_env} missing; using ${example_env} as base"
         else
-          echo "ERROR: ${secret_var} not set and ${example_env} is missing"
+          echo "ERROR: Secure File ${region_env} unavailable and ${example_env} is missing"
           exit 1
         fi
 
@@ -178,14 +195,14 @@ android_apk:
   # MR-only; skip any flavor whose CI/CD secrets are unset (keeps the
   # pipeline green when only one flavor's secrets are configured).
   rules:
-    - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "global" && $FS_ENV_GLOBAL_FILE && $FS_KEYSTORE_GLOBAL_FILE && $FS_GOOGLE_SERVICES_JSON'
-    - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "cn" && $FS_ENV_CN_FILE && $FS_KEYSTORE_CN_FILE'
+    - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "global" && $FS_KEYSTORE_GLOBAL_FILE && $FS_GOOGLE_SERVICES_JSON'
+    - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "cn" && $FS_KEYSTORE_CN_FILE'
     - when: never
   script:
     - !reference [.select_deployment, script]
     - npm ci
-    # Secrets: FS_ENV_<FLAVOR>_FILE (optional; falls back to .env.<flavor>.example),
-    # FS_KEYSTORE_<FLAVOR>_FILE, FS_GOOGLE_SERVICES_JSON (global); keystore.properties via prebuild.
+    # Secure Files: .env.<flavor> (optional; falls back to .env.<flavor>.example).
+    # CI vars: FS_KEYSTORE_<FLAVOR>_FILE, FS_GOOGLE_SERVICES_JSON (global); keystore.properties via prebuild.
     - |
       set -euo pipefail
       FLAVOR_UPPER=$(echo "${APP_FLAVOR}" | tr '[:lower:]' '[:upper:]')
@@ -245,7 +262,7 @@ ios_ipa:
     - job: code_quality
       optional: true
   rules:
-    - if: '$CI_MERGE_REQUEST_ID && $FS_ENV_GLOBAL_FILE && $IOS_P12_PASSWORD && $XCODE_ORG_ID'
+    - if: '$CI_MERGE_REQUEST_ID && $IOS_P12_PASSWORD && $XCODE_ORG_ID'
     - when: never
   script:
     - !reference [.select_deployment, script]
@@ -288,8 +305,8 @@ ios_ipa:
 
       npm ci
 
-      # FS_ENV_GLOBAL_FILE (base64 .env.global) when set; else .env.global.example.
-      # Missing keys in the CI secret are filled from the committed example.
+      # Secure File .env.global when present; else .env.global.example.
+      # Missing keys in the Secure File are filled from the committed example.
       resolve_ci_env global
       inject_active_sdk .env.global
       cp .env.global .env
@@ -388,7 +405,7 @@ android_test:
   extends: .device_test
   resource_group: android_moto
   rules:
-    - if: '$CI_MERGE_REQUEST_ID && $FS_ENV_GLOBAL_FILE && $FS_KEYSTORE_GLOBAL_FILE && $FS_GOOGLE_SERVICES_JSON'
+    - if: '$CI_MERGE_REQUEST_ID && $FS_KEYSTORE_GLOBAL_FILE && $FS_GOOGLE_SERVICES_JSON'
     - when: never
   needs:
     - job: "android_apk: [global]"
@@ -412,7 +429,7 @@ ios_test:
   resource_group: iphone_air
   before_script: []
   rules:
-    - if: '$CI_MERGE_REQUEST_ID && $FS_ENV_GLOBAL_FILE && $IOS_P12_PASSWORD && $XCODE_ORG_ID'
+    - if: '$CI_MERGE_REQUEST_ID && $IOS_P12_PASSWORD && $XCODE_ORG_ID'
     - when: never
   needs:
     - job: ios_ipa
@@ -434,7 +451,7 @@ ios_test:
     - !reference [.device_test_run, script]
 
 # OTA publish — see deployment/ota/README.md for the flow, trigger model, and rotation.
-.ota_publish_global:
+.ota_publish:
   stage: deploy
   tags: [mac-mini-runner]
   needs: []
@@ -468,8 +485,6 @@ ios_test:
           - "deployment/ota/certs/certificate.pem"
       when: never
     - if: $CI_COMMIT_BRANCH =~ /^release\/.*/
-  variables:
-    OTA_REGION: global
   script:
     - !reference [.env_tools, script]
     - !reference [.ota_signing_key, script]
@@ -482,7 +497,7 @@ ios_test:
       : "${CLOUDFRONT_DISTRIBUTION_ID:?must be set as a GitLab CI/CD variable}"
       : "${APP_ASSETS_URL:?must be set as a GitLab CI/CD variable}"
 
-      # Decode FS_ENV_<REGION>_FILE when set (falls back to .env.<region>.example)
+      # Use Secure File .env.<region> when present (falls back to .env.<region>.example)
       # so the fingerprint here matches the one the dev computed against the same
       # env — otherwise `sync-runtime-version.js --check` drifts on release cuts.
       resolve_ci_env "${OTA_REGION}"
@@ -523,13 +538,24 @@ ios_test:
       curl -sI "https://${HOST}/ota/prod/${OTA_REGION}/${OTA_PLATFORM}/${OTA_FINGERPRINT}/latest/manifest.json" | head -10
 
 ota_publish_global_ios:
-  extends: .ota_publish_global
+  extends: .ota_publish
   variables:
+    OTA_REGION: global
     OTA_PLATFORM: ios
 
 ota_publish_global_android:
-  extends: .ota_publish_global
+  extends: .ota_publish
   variables:
+    OTA_REGION: global
+    OTA_PLATFORM: android
+
+# CN Android OTA. Same bucket / CloudFront / APP_ASSETS_URL as global;
+# OTA_REGION=cn routes to the /ota/prod/cn/ prefix. iOS stays global-only
+# (single binary resolves region at runtime).
+ota_publish_cn_android:
+  extends: .ota_publish
+  variables:
+    OTA_REGION: cn
     OTA_PLATFORM: android
 
 ###############################################################
@@ -538,7 +564,8 @@ ota_publish_global_android:
 #   + latest/manifest.json, history.jsonl, version-meta, web/version-manifest.json
 #   + local tracking via deployment/web/cdn.yaml (created from example in the job)
 # CI/CD variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, [AWS_SESSION_TOKEN],
-# AWS_REGION, APP_ASSETS_S3_BUCKET, CLOUDFRONT_DISTRIBUTION_ID, APP_ASSETS_URL, FS_ENV_WEB_FILE
+# AWS_REGION, APP_ASSETS_S3_BUCKET, CLOUDFRONT_DISTRIBUTION_ID, APP_ASSETS_URL
+# Secure Files: .env.web
 # Optional: WEB_DEPLOY_ENV (prod), WEB_DEPLOY_REGION (global|cn), WEB_DEPLOY_VERSION
 #
 # Trigger: push to release/* → play web_deploy manually after code_quality
@@ -549,20 +576,21 @@ web_deploy:
   tags: [mac-mini-runner]
   interruptible: false
   rules:
-    - if: '$CI_COMMIT_BRANCH =~ /^release\// && $AWS_ACCESS_KEY_ID && $APP_ASSETS_S3_BUCKET && $CLOUDFRONT_DISTRIBUTION_ID && $FS_ENV_WEB_FILE'
+    - if: '$CI_COMMIT_BRANCH =~ /^release\// && $AWS_ACCESS_KEY_ID && $APP_ASSETS_S3_BUCKET && $CLOUDFRONT_DISTRIBUTION_ID'
       when: manual
     - when: never
   needs:
     - job: code_quality
       optional: true
   script:
+    - !reference [.env_tools, script]
     - !reference [.aws_web_credentials, script]
     - |
       set -euo pipefail
       : "${APP_ASSETS_S3_BUCKET:?Set APP_ASSETS_S3_BUCKET in CI/CD variables}"
       : "${CLOUDFRONT_DISTRIBUTION_ID:?Set CLOUDFRONT_DISTRIBUTION_ID in CI/CD variables}"
-      : "${FS_ENV_WEB_FILE:?Set FS_ENV_WEB_FILE (base64 .env.web)}"
-      export APP_ASSETS_S3_BUCKET CLOUDFRONT_DISTRIBUTION_ID FS_ENV_WEB_FILE
+      download_secure_files
+      export APP_ASSETS_S3_BUCKET CLOUDFRONT_DISTRIBUTION_ID
       if [ -n "${APP_ASSETS_URL:-}" ]; then
         export APP_ASSETS_URL
       fi
