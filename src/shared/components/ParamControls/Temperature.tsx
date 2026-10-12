@@ -20,6 +20,7 @@ import { ChartNoAxesCombined } from "lucide-react-native";
 // Types
 import { ParamControlChildProps } from "./lib/types";
 import { observer } from "mobx-react-lite";
+import { useTranslation } from "react-i18next";
 
 /**
  * Temperature
@@ -31,27 +32,32 @@ import { observer } from "mobx-react-lite";
  * @returns Temperature readout that invokes `onOpenChart` when charts are enabled
  */
 const Temperature = observer(
-  ({ label, value, onOpenChart, disabled }: ParamControlChildProps) => {
-    // Handlers
+  ({ label, value, onOpenChart }: ParamControlChildProps) => {
+    const { t } = useTranslation();
+    const canOpenChart = Boolean(onOpenChart);
+
+    /**
+     * Opens the time-series chart when this param supports it.
+     */
     const handlePress = () => {
-      if (disabled) return;
-      if (onOpenChart) {
-        onOpenChart();
-      }
+      onOpenChart?.();
     };
 
-    // Format temperature value with unit
-    const formatTemperature = (val: any): string => {
-      if (val === null || val === undefined) return "N/A";
+    /**
+     * Formats a temperature readout with a Celsius suffix.
+     * @param val - Current param value
+     * @returns Display string, or the localized "not available" when the value is missing
+     */
+    const formatTemperature = (val: unknown): string => {
+      if (val === null || val === undefined) return t("common.notAvailable");
       return `${val}°C`;
     };
 
-    // Render
     return (
       <TouchableOpacity
         style={[styles.container, styles.containerCompact]}
         onPress={handlePress}
-        disabled={disabled}
+        disabled={!canOpenChart}
       >
         <View style={styles.content}>
           <View style={styles.textContainer}>
@@ -60,7 +66,9 @@ const Temperature = observer(
               {formatTemperature(value)}
             </Text>
           </View>
-          <ChartNoAxesCombined size={20} color={tokens.colors.gray} />
+          {canOpenChart ? (
+            <ChartNoAxesCombined size={20} color={tokens.colors.gray} />
+          ) : null}
         </View>
       </TouchableOpacity>
     );

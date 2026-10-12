@@ -1,10 +1,15 @@
 npm run check
 
-# OTA drift gate: if any staged file shifts the fingerprint, ensure the
-# committed native files match before letting the commit through. The
-# fingerprint sourcer hashes native dirs, app.config.ts, fingerprint.config.js,
-# and package(-lock).json (via node_modules autolinking). Skip the ~30-60s
-# check entirely for JS-only commits.
+# OTA drift gate: only run on pre-release/* branches. Feature/bugfix branches
+# often shift the fingerprint intentionally during work; drift only has to
+# be clean when the branch is being cut for release. Detached HEAD (e.g.
+# during rebase) resolves to "HEAD" and is skipped.
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+case "$BRANCH" in
+  pre-release/*) ;;
+  *) exit 0 ;;
+esac
+
 STAGED_FINGERPRINT_INPUTS=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(ios/|android/|fingerprint\.config\.js$|app\.config\.ts$|package(-lock)?\.json$|deployment/ota/certs/certificate\.pem$)' || true)
 
 if [ -n "$STAGED_FINGERPRINT_INPUTS" ]; then

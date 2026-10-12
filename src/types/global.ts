@@ -4,6 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type {
+  TimeSeriesRangeUnit,
+  TimeSeriesStat,
+  TimeSeriesWindow,
+} from "@shared/timeSeries";
+import type { TS_MODE_RAW } from "@shared/utils/constants";
+import type { SharedValue } from "react-native-reanimated";
+
 import {
   ViewStyle,
   TextStyle,
@@ -1216,144 +1224,306 @@ export type {
   FontSizeLevel,
   AgentTermsBottomSheetStyles, AgentConversationsSheetStyles
 } from "@features/agent/utils/types";
+// ============================================================================
 // Time Series Chart Types
 // ============================================================================
 
 /**
- * Chart tab granularity: one calendar bucket size per tab (Daily / Weekly / Monthly).
+ * Chart tab: one server aggregation window, or raw samples.
  */
-export type ChartGranularity = "daily" | "weekly" | "monthly";
+export type ChartMode = TimeSeriesWindow | typeof TS_MODE_RAW;
+
+/**
+ * Quick range preset shown under a chart tab.
+ */
+export interface RangePreset {
+  /** Preset key (i18n label under `device.chart.preset.*`) */
+  key: string;
+  /** Calendar unit the range is aligned to and stepped by */
+  unit: TimeSeriesRangeUnit;
+  /** Number of units the range spans */
+  count: number;
+}
+
+/**
+ * Half-open chart range `[start, end)` aligned to a calendar unit.
+ */
+export interface ChartRange {
+  /** Range start (Unix ms) */
+  start: number;
+  /** Range end, exclusive (Unix ms) */
+  end: number;
+  /** Calendar unit the range is aligned to and stepped by */
+  unit: TimeSeriesRangeUnit;
+  /** Number of units the range spans */
+  units: number;
+  /** Preset the range was built from; absent for custom or shifted ranges */
+  presetKey?: string;
+}
+
+/**
+ * X axis of a chart range: the plotted extent and where the labels sit.
+ */
+export interface ChartXAxis {
+  /** Plotted extent (Unix ms) */
+  domain: [number, number];
+  /** Label positions (Unix ms), ascending */
+  ticks: number[];
+}
+
+/**
+ * Zoom support of a chart: how narrow the visible window may get and how to
+ * lay out the X axis of any visible window.
+ */
+export interface ChartZoom {
+  /** Narrowest visible window (ms) */
+  minSpanMs: number;
+  /** X-axis labels and their format for a visible window */
+  axisFor: (
+    start: number,
+    end: number,
+  ) => { ticks: number[]; formatLabel: (timestamp: number) => string };
+}
 
 /**
  * High-level state of the chart view
  */
 export type ChartState = "loading" | "error" | "unsupported" | "empty" | "ready";
 
-/**
- * Boundaries of a single chart bucket (one bar slot), before data is loaded.
- */
-export interface TimeSeriesBucketBoundary {
-  /** Bucket start (inclusive), Unix milliseconds */
-  start: number;
-  /** Bucket end (exclusive), Unix milliseconds */
-  end: number;
-  /** Short x-axis label for the bucket (e.g. "12 Jul", "07-13 Jul", "Jul'26"); also the tooltip's period line */
+/** Represents a single data point in a chart */
+export interface ChartDataPoint {
+  /** The numeric value of the data point (null for missing data) */
+  value: number | null;
+  /** The label/timestamp for the data point */
   label: string;
+  /** Optional timestamp in milliseconds */
+  timestamp?: number;
 }
 
 /**
- * A chart bucket with its aggregated value (null when the bucket has no data).
+ * Props for TimeNavigator component
  */
-export interface TimeSeriesBucket extends TimeSeriesBucketBoundary {
-  /** Aggregated value for the bucket, or null when no data was reported */
-  value: number | null;
-}
-
-/**
- * How the window summary value relates to the buckets.
- */
-export type TimeSeriesSummaryKind = "average" | "total";
-
-/**
- * Summary of the visible chart window (the big number above the chart).
- */
-export interface TimeSeriesSummary {
-  /** Summary value across non-empty buckets, or null when the window is empty */
-  value: number | null;
-  /** Whether the value is an average or a total of the window */
-  kind: TimeSeriesSummaryKind;
-}
-
-/**
- * Props for ChartMessage component
- */
-export interface ChartMessageProps {
-  /** Message text to display in the chart area */
-  text: string;
-}
-
-/**
- * Props for GranularityTabs component
- */
-export interface GranularityTabsProps {
-  /** Currently selected granularity */
-  selected: ChartGranularity;
-  /** Disables tab presses (e.g. while loading) */
-  disabled?: boolean;
-  /** Handler called with the granularity of the pressed tab */
-  onSelect: (granularity: ChartGranularity) => void;
-}
-
-/**
- * Props for ChartSummaryHeader component
- */
-export interface ChartSummaryHeaderProps {
-  /** Formatted summary value with unit (e.g. "76.4 kWh"), or a placeholder */
-  valueLabel: string;
-  /** Formatted window range label (e.g. "07-Jun-26 to 25-Jul-26") */
-  rangeLabel: string;
-  /** Whether paging forward (towards now) is possible */
-  canGoNext: boolean;
-  /** Disables both pagers (e.g. while loading) */
-  disabled?: boolean;
-  /** Handler for paging one window back in time */
+export interface TimeNavigatorProps {
+  /** Formatted label of the visible range */
+  label: string;
+  /** Whether data is currently loading */
+  loading?: boolean;
+  /** Callback when previous period button is pressed */
   onPrevious: () => void;
-  /** Handler for paging one window forward in time */
+  /** Callback when next period button is pressed */
   onNext: () => void;
+  /** Callback when the range label is pressed (opens the custom range picker) */
+  onPressLabel?: () => void;
+  /** Whether navigation to next period is allowed */
+  canNavigateNext: boolean;
 }
 
 /**
- * Props for TimeSeriesBarChart component
+ * Props for WindowTabs component
  */
-export interface TimeSeriesBarChartProps {
-  /** The buckets of the visible window, one bar per bucket */
-  buckets: TimeSeriesBucket[];
-  /** Unit suffix appended to the tooltip value (e.g. "°"), may be empty */
-  unit: string;
-  /** Index of the selected (highlighted) bucket, or null for no selection */
-  selectedIndex: number | null;
-  /** Handler called with the tapped bucket index */
-  onSelectBar: (index: number) => void;
-  /** Render an x-axis label only every Nth bucket (1 = every bucket) */
-  labelEveryNth?: number;
-}
-
-/**
- * Return type for the useTimeSeriesChart hook
- */
-export interface UseTimeSeriesChartResult {
-  /** Title for the screen header (param name) */
-  title: string;
-  /** Currently selected granularity tab */
-  granularity: ChartGranularity;
-  /** Buckets of the visible window (empty while loading/unsupported) */
-  buckets: TimeSeriesBucket[];
-  /** Window summary shown above the chart */
-  summary: TimeSeriesSummary;
-  /** Unit suffix for values (may be empty) */
-  unit: string;
-  /** Formatted range label for the visible window */
-  rangeLabel: string;
-  /** Overall view state driving chart vs message rendering */
-  chartState: ChartState;
-  /** Localized message for every non-ready chart state */
-  chartStateLabelMap: Record<Exclude<ChartState, "ready">, string>;
-  /** Whether a data request is in flight */
+export interface WindowTabsProps {
+  /** Tabs available for the parameter, in display order */
+  modes: readonly ChartMode[];
+  /** Active tab */
+  selected: ChartMode | null;
+  /** Whether data is currently loading */
   loading: boolean;
-  /** Whether paging forward (towards now) is possible */
-  canGoNext: boolean;
-  /** Index of the selected bar, or null */
-  selectedIndex: number | null;
-  /** X-axis label density for the current granularity (1 = label every bucket) */
-  labelEveryNth: number;
-  /** Selects a granularity tab (resets paging and selection) */
-  onSelectGranularity: (granularity: ChartGranularity) => void;
-  /** Pages one window back in time */
-  onPreviousWindow: () => void;
-  /** Pages one window forward in time */
-  onNextWindow: () => void;
-  /** Selects (highlights) a bar by bucket index */
-  onSelectBar: (index: number) => void;
+  /** Handler called when a tab is pressed */
+  onSelect: (mode: ChartMode) => void;
+}
+
+/**
+ * Props for RangePresets component
+ */
+export interface RangePresetsProps {
+  /** Presets of the active tab */
+  presets: readonly RangePreset[];
+  /** Key of the active preset, if the range still matches one */
+  selectedKey?: string;
+  /** Whether data is currently loading */
+  loading: boolean;
+  /** Handler called when a preset is pressed */
+  onSelect: (preset: RangePreset) => void;
+}
+
+/**
+ * Props interface for ChartHeader component
+ */
+export interface ChartHeaderProps {
+  /** Label to show for the parameter */
+  label: string;
+  /** Parameter object that exposes current value and setValue */
+  param: ESPCDFDeviceParam | null;
+  /** Whether the parameter is writeable */
+  isWriteable?: boolean;
+  /** Disable editing state (e.g. while loading chart data) */
+  disabled?: boolean;
+}
+
+/**
+ * Normalized chart data point with a required timestamp.
+ * Used internally by GenericChart after data normalization.
+ */
+export interface NormalizedChartDataPoint extends Record<string, unknown> {
+  /** Timestamp in milliseconds (required) */
+  timestamp: number;
+  /** Numeric value, or null for a slot with no data */
+  value: number | null;
+}
+
+/** Props interface for GenericChart component */
+export interface GenericChartProps {
+  /** Chart data points with timestamp and value */
+  data: ChartDataPoint[];
+  /** Height of the chart */
+  height?: number;
+  /** Chart type: "line" or "bar" */
+  type?: "line" | "bar";
+  /** Unit appended to the tooltip value (e.g. `°C`, `kWh`) */
+  unit?: string;
+  /** X-axis label formatter, resolved by the caller from the tab and range */
+  formatXLabel: (timestamp: number) => string;
+  /** X-axis layout (domain and label positions), resolved by the caller from the tab and range */
+  xAxis: ChartXAxis;
+  /** When set, pinch, drag and double-tap zoom the visible window */
+  zoom?: ChartZoom;
+}
+
+/**
+ * Props for ChartEmptyState component
+ */
+export interface ChartEmptyStateProps {
+  /** Icon drawn above the title */
+  icon: React.ReactNode;
+  /** Short headline */
+  title: string;
+  /** Optional explanation or error detail */
+  description?: string;
+  /** Fill the screen (param has no time series) instead of the chart area */
+  fullScreen?: boolean;
+}
+
+/**
+ * Props for ChartTypeToggle component
+ */
+export interface ChartTypeToggleProps {
+  /** Currently selected chart type */
+  chartType: GenericChartProps["type"];
+  /** Whether data is currently loading */
+  loading: boolean;
+  /** Handler called when a chart type is selected */
+  onChange: (type: GenericChartProps["type"]) => void;
+}
+
+/**
+ * Props for AggregationDropdown component
+ */
+export interface AggregationDropdownProps {
+  /** Currently plotted statistic */
+  stat: TimeSeriesStat;
+  /** Statistics selectable for the buckets on screen */
+  options: readonly TimeSeriesStat[];
+  /** Whether data is currently loading */
+  loading: boolean;
+  /** Handler when a statistic is selected */
+  onSelect: (stat: TimeSeriesStat) => void;
+}
+
+/**
+ * Where the statistic menu opens, in window coordinates: just below the
+ * dropdown chip, flush with its trailing edge.
+ */
+export interface AggregationMenuAnchor {
+  /** Distance from the top of the window to the menu */
+  top: number;
+  /** Distance from the right edge of the window to the menu */
+  right: number;
+}
+
+/**
+ * Props for AggregationTooltip component
+ */
+export interface AggregationTooltipProps {
+  /** Whether the menu is open */
+  visible: boolean;
+  /** Callback when the menu is dismissed */
+  onClose: () => void;
+  /** Anchor of the menu; null while closed */
+  anchor: AggregationMenuAnchor | null;
+  /** Statistics selectable for the buckets on screen */
+  options: readonly TimeSeriesStat[];
+  /** Callback when a statistic is selected */
+  onSelect: (stat: TimeSeriesStat) => void;
+  /** Currently plotted statistic */
+  selected: TimeSeriesStat;
+}
+
+// ============================================================================
+// Date Range Calendar Types
+// ============================================================================
+
+/**
+ * Props for DateRangeCalendarBottomSheet component
+ */
+export interface DateRangeCalendarBottomSheetProps {
+  /** Whether the bottom sheet is visible */
+  visible: boolean;
+  /** Callback when bottom sheet is closed */
+  onClose: () => void;
+  /** Callback with the first and last selected calendar days (Unix ms, local midnight) */
+  onSelect: (startDayMs: number, endDayMs: number) => void;
+  /** Currently visible range, pre-selected in the calendar */
+  range?: ChartRange | null;
+  /** Latest selectable end instant (exclusive, Unix ms) for a given start day */
+  maxEndFor: (startDayMs: number) => number;
+  /** Week start day (0 = Sunday, 1 = Monday, etc.) */
+  weekStart?: number;
+}
+
+/**
+ * Methods exposed via ref for DateRangeCalendarBottomSheet
+ */
+export interface DateRangeCalendarBottomSheetRef {
+  /** Clears the current date selection */
+  clearSelection: () => void;
+}
+
+/**
+ * Props for ActiveValueIndicator component
+ */
+export interface ActiveValueIndicatorProps {
+  /** Animated X of the pressed point */
+  xPosition: SharedValue<number>;
+  /** Animated Y of the pressed point */
+  yPosition: SharedValue<number>;
+  /** Bottom edge of the plot area */
+  bottom: number;
+  /** Top edge of the plot area */
+  top: number;
+  /** Colour of the vertical guide line */
+  lineColor: string;
+  /** Animated colour of the inner indicator dot */
+  indicatorColor: SharedValue<string>;
+}
+
+/**
+ * Props for ChartValueDisplayToolTip component
+ */
+export interface ChartValueDisplayToolTipProps {
+  /** Animated value of the pressed point */
+  activeValue: SharedValue<number>;
+  /** Animated timestamp (Unix ms) of the pressed point */
+  activeTimestamp: SharedValue<number>;
+  /** Animated X of the pressed point */
+  xPosition: SharedValue<number>;
+  /** Animated Y of the pressed point */
+  yPosition: SharedValue<number>;
+  chartLeft: number;
+  chartRight: number;
+  chartTop: number;
+  chartBottom: number;
+  /** Unit appended to the value */
+  unit?: string;
 }
 
 // ============================================================================

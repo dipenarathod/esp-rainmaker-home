@@ -43,10 +43,13 @@ cd esp-rainmaker-home
 nvm use 22
 npm install
 
-# Configure environment. Each region has a committed template (.env.global.example /
-# .env.cn.example). Copy it to a local, gitignored real-values file and edit as needed:
+# Configure environment. Internal devs pull .env.global / .env.cn / .env.web
+# from GitLab Secure Files (one-time: `brew install glab` then
+# `glab auth login --hostname gitlab.espressif.cn:6688`):
+npm run env:pull                        # or env:pull:global / env:pull:cn / env:pull:web
+# Forks / open-source: copy the committed templates instead:
 cp .env.global.example .env.global      # or: cp .env.cn.example .env.cn
-# Builds prefer the local .env.global / .env.cn and fall back to the .example.
+# Builds prefer the local .env.* and fall back to the .example.
 # See docs/CONFIGURATION.md.
 npm run prebuild
 

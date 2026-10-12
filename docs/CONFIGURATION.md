@@ -34,7 +34,9 @@ Each region has **one self-contained env file** holding *everything* for that re
 | File | Committed? | Role |
 | --- | --- | --- |
 | `.env.global.example` / `.env.cn.example` | yes | Template / reference (safe to commit). Also the fallback when no local file exists (CI, fresh checkout). |
-| `.env.global` / `.env.cn` | **no** (gitignored) | Your real values. Copy the matching `.example`, then edit. |
+| `.env.global` / `.env.cn` | **no** (gitignored) | Your real values. Internal devs: `npm run env:pull` (see below). Forks: copy the matching `.example`, then edit. |
+
+Internal developers do not fill these in by hand. The real files live in GitLab → Settings → CI/CD → **Secure Files**, and `npm run env:pull` downloads all three (`.env.global`, `.env.cn`, `.env.web`) into the repo root via `scripts/env-pull.js`. One-time setup: `brew install glab`, then `glab auth login --hostname gitlab.espressif.cn:6688`. Per-file variants: `npm run env:pull:global`, `env:pull:cn`, `env:pull:web`. CI downloads the same Secure Files itself, so a key added to the `.example` template is filled in automatically until the Secure File is re-uploaded.
 
 A build copies the relevant file to `.env`, **preferring the local file and falling back to the committed `.example`**:
 

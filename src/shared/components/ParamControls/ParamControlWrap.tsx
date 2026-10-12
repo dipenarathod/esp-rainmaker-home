@@ -12,6 +12,7 @@ import { observer, useLocalObservable } from "mobx-react-lite";
 import { useThrottle } from "@shared/hooks/useThrottle";
 import { useToast } from "@shared/hooks/useToast";
 import {
+  ESPRM_PARAM_READ_PROPERTY,
   ESPRM_PARAM_TIME_SERIES_PROPERTY,
   ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY,
   ESPRM_PARAM_WRITE_PROPERTY,
@@ -88,19 +89,26 @@ const ParamControlWrap = observer(
       },
     }));
 
-    const isTimeSeriesParam = useMemo(
-      () =>
-        [
-          ESPRM_PARAM_TIME_SERIES_PROPERTY,
-          ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY,
-        ].some((property) => param.properties?.includes(property)),
-      [param.properties],
-    );
-
     const isWritable = useMemo(
       () => param.properties?.includes(ESPRM_PARAM_WRITE_PROPERTY) ?? false,
       [param.properties],
     );
+
+    /**
+     * Chart entry is for telemetry with `read` plus `time_series` / `simple_ts`
+     * (e.g. Neo `esp.ui.text` Wattage/Energy). Edit stays off unless `write`
+     * is present — `onOpenChart` is the only press path for those rows.
+     */
+    const canOpenChart = useMemo(() => {
+      const properties = param.properties;
+      if (!properties?.includes(ESPRM_PARAM_READ_PROPERTY)) {
+        return false;
+      }
+      return (
+        properties.includes(ESPRM_PARAM_TIME_SERIES_PROPERTY) ||
+        properties.includes(ESPRM_PARAM_SIMPLE_TIME_SERIES_PROPERTY)
+      );
+    }, [param.properties]);
 
     const displayLabel = useMemo(
       () => resolveParamDisplayLabel(param),
@@ -204,17 +212,10 @@ const ParamControlWrap = observer(
               label: displayLabel,
               value: state.value,
               onValueChange: handleValueChange,
-              // time_series readouts stay pressable (even when read-only) so
-              // the chart entry works. Writable params follow the passed
-              // `disabled` (e.g. disconnected). Any other read-only param is a
-              // pure display, so force it disabled — this hides the edit
-              // affordance and guarantees a read-only param never offers a
-              // write path.
-              disabled: isTimeSeriesParam
-                ? disabled
-                : isWritable
-                  ? disabled
-                  : true,
+              // No `write` → force disabled so text editors hide Edit.
+              // Time-series + read still receive `onOpenChart`; the child
+              // (TextInput, Temperature) opens the chart without a write path.
+              disabled: isWritable ? disabled : true,
               meta: {
                 ...getParamBounds(param),
                 dataType: param.dataType,
@@ -222,7 +223,10 @@ const ParamControlWrap = observer(
                 valueSuffix: paramBounds[PARAM_BOUNDS_VALUE_SUFFIX] ?? "",
                 controlBoardActions: paramBounds[PARAM_BOUNDS_CONTROL_BOARD_ACTIONS],
               },
-              onOpenChart: onOpenChart ? () => onOpenChart(param) : null,
+              onOpenChart:
+                onOpenChart && canOpenChart
+                  ? () => onOpenChart(param)
+                  : null,
             },
           );
         })}

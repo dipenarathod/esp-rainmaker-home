@@ -57,6 +57,12 @@ export const paramControlStyles = StyleSheet.create({
     flex: 1,
   },
 
+  iconCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: tokens.spacing._10,
+  },
+
   // Typography
   title: {
     ...globalStyles.fontMd,

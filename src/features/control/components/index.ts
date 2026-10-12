@@ -7,6 +7,7 @@
 export { default as DevicePanelNoParamsEmptyState } from "./DevicePanelNoParamsEmptyState";
 export { default as GuideLoadErrorEmptyState } from "./GuideLoadErrorEmptyState";
 export type { GuideLoadErrorEmptyStateProps } from "./GuideLoadErrorEmptyState";
+export { default as DateRangeCalendarBottomSheet } from "./DateRangeCalendarBottomSheet";
 export { default as AgentSelectionBottomSheet } from "./AgentSelectionBottomSheet";
 export { default as DeviceAuthRefreshButton } from "./DeviceAuthRefreshButton";
 export { RoundedSlider } from "./RoundedSlider";

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * Fills missing or empty keys in a CI/decoded env file from the committed
- * `.env.<region>.example` template. Non-empty values in the target always win.
+ * Fills missing or empty keys in a CI env file (a downloaded GitLab Secure File,
+ * or a decoded GitHub Actions secret) from the committed `.env.<region>.example`
+ * template. Non-empty values in the target always win.
  *
- * Used by GitLab CI when FS_ENV_* secrets are absent or omit keys that were
- * added to the template after the secret was last updated.
+ * Used by GitLab CI when the Secure File is absent or omits keys that were
+ * added to the template after the file was last uploaded.
  *
  * @param {string} targetPath - Real-values env file (e.g. `.env.global` from CI).
  * @param {string} examplePath - Committed template (e.g. `.env.global.example`).

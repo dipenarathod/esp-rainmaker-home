@@ -955,26 +955,71 @@
     },
     "chart": {
       "title": "Chart",
-      "errorLoadingData": "Error loading data: {{message}}",
-      "loadingChartData": "Loading chart data...",
-      "noDataAvailable": "No data available",
-      "notSupported": "Charts are not supported for this parameter",
-      "noValue": "--",
-      "rangeSeparator": "to",
-      "tabs": {
+      "value": "Value",
+      "types": "Types",
+      "selectDateRange": "Select Date Range",
+      "valueUpdated": "Value Updated",
+      "valueUpdatedSuccessfully": "Value updated successfully",
+      "failedToUpdateValue": "Failed to Update Value",
+      "updateError": "An error occurred while updating the value",
+      "chartHeader": {
+        "cancel": "Cancel",
+        "save": "Save",
+        "saving": "Saving...",
+        "enterValue": "Enter value"
+      },
+      "aggregation": {
+        "avg": "Avg",
+        "min": "Min",
+        "max": "Max",
+        "count": "Count",
+        "sum": "Sum",
+        "first": "First",
+        "last": "Last",
+        "reading": "Meter reading"
+      },
+      "window": {
+        "hourly": "Hourly",
         "daily": "Daily",
         "weekly": "Weekly",
-        "monthly": "Monthly"
+        "monthly": "Monthly",
+        "raw": "Raw"
       },
-      "lastWindow": {
-        "daily": "Last {{count}} Days",
-        "weekly": "Last {{count}} Weeks",
-        "monthly": "Last {{count}} Months"
+      "preset": {
+        "1h": "1H",
+        "6h": "6H",
+        "24h": "24H",
+        "1d": "1D",
+        "7d": "7D",
+        "4w": "4W",
+        "1y": "1Y"
       },
-      "proTipLabel": "Pro Tip:",
-      "proTipText": "Single tap on a bar to see its value.",
-      "disclaimerLabel": "Disclaimer:",
-      "disclaimerText": "Values are estimated from data reported by the device. Actual data may vary."
+      "range": {
+        "current": {
+          "hour": "This hour",
+          "day": "Today",
+          "week": "This week",
+          "month": "This month"
+        }
+      },
+      "notes": {
+        "rawTruncated": "Showing the latest {{shown}} samples; older samples in this range were not loaded",
+        "downsampled": "Downsampled from {{total}} to {{shown}} points for display"
+      },
+      "tips": {
+        "tipLabel": "Tip:",
+        "tip": "Press and hold on the chart to see the value at that point.",
+        "zoomTip": "Pinch or double-tap to zoom into a crowded stretch; double-tap again to reset."
+      },
+      "empty": {
+        "noTimeSeriesTitle": "No time series data",
+        "noTimeSeriesDescription": "This parameter does not report historical values.",
+        "noDataTitle": "No data in this range",
+        "noDataDescription": "The device reported nothing for the selected range. Try another range or window.",
+        "unsupportedTitle": "Range not supported",
+        "unsupportedDescription": "The backend cannot serve this range for the selected window. Pick a shorter range.",
+        "errorTitle": "Couldn't load chart data"
+      }
     },
     "camera": {
       "errors": {
@@ -1554,7 +1599,9 @@
     "close": "Close",
     "continue": "Continue",
     "confirm": "Confirm",
-    "clear": "Clear"
+    "clear": "Clear",
+    "notAvailable": "N/A",
+    "enterText": "Enter text"
   },
   "config": {
     "scan": {

@@ -15,6 +15,9 @@ def isCnRegion = appRegion == "cn" || buildingCnTask
 
 if (!isCnRegion) {
     apply plugin: "com.google.gms.google-services"
+    // Crashlytics rides on google-services, so it is gated identically: CN
+    // builds get no plugin, no mapping upload and no symbol upload.
+    apply plugin: "com.google.firebase.crashlytics"
 
     def googleServicesFile = file("google-services.json")
     if (!googleServicesFile.exists()) {
@@ -291,7 +294,7 @@ android {
             }
             minifyEnabled false
             shrinkResources false
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             crunchPngs true
         }
         release {
@@ -302,7 +305,7 @@ android {
             }
             shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
             minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
     }
@@ -352,9 +355,9 @@ dependencies {
 
     // Firebase / Google Play services — GLOBAL flavor only. The CN flavor
     // ships without these so the CN APK contains no Google dependencies.
-    globalImplementation 'com.google.android.gms:play-services-cast:22.1.0'
-    globalImplementation 'com.google.firebase:firebase-analytics-ktx:22.1.2'
-    globalImplementation platform('com.google.firebase:firebase-bom:33.5.1')
+    globalImplementation 'com.google.android.gms:play-services-cast:22.3.1'
+    globalImplementation 'com.google.firebase:firebase-analytics-ktx:22.5.0'
+    globalImplementation platform('com.google.firebase:firebase-bom:34.19.0')
     globalImplementation 'com.google.firebase:firebase-messaging'
     globalImplementation 'com.google.firebase:firebase-common-ktx:21.0.0'
 
@@ -371,7 +374,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
     implementation 'commons-codec:commons-codec:1.19.0'
-    implementation 'commons-logging:commons-logging:1.2'
+    implementation 'commons-logging:commons-logging:1.4.0'
     implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
     implementation 'org.bouncycastle:bcpkix-jdk15on:1.70'
     implementation 'org.bouncycastle:bcutil-jdk15on:1.70'
@@ -382,10 +385,10 @@ dependencies {
 
     // Google Play services Matter APIs for commissioning UI — GLOBAL flavor only
     // (CN uses in-app ChipTool commissioning instead).
-    globalImplementation 'com.google.android.gms:play-services-base:18.8.0'
+    globalImplementation 'com.google.android.gms:play-services-base:18.11.0'
     globalImplementation 'com.google.android.gms:play-services-home:16.0.0'
 
-    implementation 'com.google.code.gson:gson:2.13.2'
+    implementation 'com.google.code.gson:gson:2.14.0'
     
     // Chrome Custom Tabs for in-app OAuth browser
     implementation 'androidx.browser:browser:1.8.0'
