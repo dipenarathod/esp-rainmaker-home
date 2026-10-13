@@ -188,6 +188,11 @@ android_apk:
   interruptible: true
   # Cold builds already take up to ~58 min on this runner, just under the 1h default.
   timeout: 90m
+  variables:
+    # CI APKs get shared for testing, so also build for 32-bit phones.
+    # Gradle reads ORG_GRADLE_PROJECT_* as a project property, ahead of
+    # android/gradle.properties (arm64-v8a only, for debug builds).
+    ORG_GRADLE_PROJECT_reactNativeArchitectures: "armeabi-v7a,arm64-v8a"
   needs:
     - job: code_quality
       optional: true
@@ -198,14 +203,16 @@ android_apk:
   # MR-only; skip any flavor whose CI/CD secrets are unset (keeps the
   # pipeline green when only one flavor's secrets are configured).
   rules:
-    - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "global" && $FS_KEYSTORE_GLOBAL_FILE && $FS_GOOGLE_SERVICES_JSON'
+    - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "global" && $FS_KEYSTORE_GLOBAL_FILE'
     - if: '$CI_MERGE_REQUEST_ID && $APP_FLAVOR == "cn" && $FS_KEYSTORE_CN_FILE'
     - when: never
   script:
     - !reference [.select_deployment, script]
+    - !reference [.env_tools, script]
     - npm ci
-    # Secure Files: .env.<flavor> (optional; falls back to .env.<flavor>.example).
-    # CI vars: FS_KEYSTORE_<FLAVOR>_FILE, FS_GOOGLE_SERVICES_JSON (global); keystore.properties via prebuild.
+    # Secure Files: .env.<flavor> (optional, falls back to .env.<flavor>.example)
+    # and google-services.json (global only). CI var: FS_KEYSTORE_<FLAVOR>_FILE
+    # (base64 keystore). keystore.properties via prebuild.
     - |
       set -euo pipefail
       FLAVOR_UPPER=$(echo "${APP_FLAVOR}" | tr '[:lower:]' '[:upper:]')
@@ -215,8 +222,11 @@ android_apk:
       KEYSTORE_B64="${!KEYSTORE_SECRET_VAR:-}"
       [ -n "${KEYSTORE_B64}" ] || { echo "${KEYSTORE_SECRET_VAR} is not set"; exit 1; }
 
-      if [ "${APP_FLAVOR}" = "global" ]; then
-        [ -n "${FS_GOOGLE_SERVICES_JSON:-}" ] || { echo "FS_GOOGLE_SERVICES_JSON is not set"; exit 1; }
+      download_secure_files
+
+      if [ "${APP_FLAVOR}" = "global" ] && [ ! -f .secure_files/google-services.json ]; then
+        echo "ERROR: Secure File google-services.json not found"
+        exit 1
       fi
 
       umask 077
@@ -224,7 +234,7 @@ android_apk:
 
       printf '%s' "${KEYSTORE_B64}" | base64 -d > "android/app/${KEYSTORE_PATH}"
       if [ "${APP_FLAVOR}" = "global" ]; then
-        printf '%s' "$FS_GOOGLE_SERVICES_JSON" | base64 -d > android/app/google-services.json
+        cp .secure_files/google-services.json android/app/google-services.json
       fi
 
       test -s "android/app/${KEYSTORE_PATH}"
@@ -232,7 +242,6 @@ android_apk:
         test -s android/app/google-services.json
       fi
 
-    - !reference [.env_tools, script]
     - |
       resolve_ci_env "${APP_FLAVOR}"
       inject_active_sdk ".env.${APP_FLAVOR}"
@@ -505,7 +514,7 @@ android_test:
   extends: .device_test
   resource_group: android_moto
   rules:
-    - if: '$CI_MERGE_REQUEST_ID && $FS_KEYSTORE_GLOBAL_FILE && $FS_GOOGLE_SERVICES_JSON'
+    - if: '$CI_MERGE_REQUEST_ID && $FS_KEYSTORE_GLOBAL_FILE'
     - when: never
   needs:
     - job: "android_apk: [global]"
@@ -602,6 +611,24 @@ ios_test:
       # env — otherwise `sync-runtime-version.js --check` drifts on release cuts.
       resolve_ci_env "${OTA_REGION}"
       npm ci
+
+      # Regenerate native config from the Secure Files env and fail if the
+      # committed files drift — catches Secure Files updates that didn't come
+      # with a matching native-file commit.
+      cp ".env.${OTA_REGION}" .env
+      npm run "prebuild:${OTA_PLATFORM}"
+      if ! git diff --exit-code --quiet; then
+        echo "ERROR: committed native files drifted vs. current Secure Files .env.${OTA_REGION}."
+        echo "Changed files:"
+        git diff --name-only
+        echo ""
+        echo "Fix: on a dev machine, run"
+        echo "  npm run env:pull:${OTA_REGION} && cp .env.${OTA_REGION} .env"
+        echo "  npm run prebuild:${OTA_PLATFORM}"
+        echo "  node deployment/ota/scripts/sync-runtime-version.js --platform ${OTA_PLATFORM}"
+        echo "then commit the result and re-cut the release."
+        exit 1
+      fi
 
       # OTA_VERSION from package.json's versionCode (see deployment/ota/README.md).
       OTA_VERSION=$(node -p "require('./package.json').versionCode")

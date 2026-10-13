@@ -248,15 +248,19 @@ function updateXcconfig(file, env) {
     // Empty string means the key exists in .env but has empty value
     const finalValue = computeValue(env);
     
-    // Find and replace the value (similar to Android sync script).
-    // [^\S\n] = whitespace EXCEPT newline: plain \s would cross the line
-    // break on keys with an empty value (e.g. `WECHAT_APP_ID =`) and swallow
-    // the following line. The value part is `*` (not `+`) so empty keys can
-    // be both matched and filled.
-    const regex = new RegExp(`^(${key}[^\\S\\n]*=[^\\S\\n]*)([^\\n]*)$`, 'm');
-    
+    // Match the whole line and rewrite it to a canonical `KEY = VALUE` shape.
+    // The previous implementation preserved whatever whitespace existed around
+    // `=`, so a hand-edit that typed `KEY =v` would ship different bytes than a
+    // sync run that produced `KEY = v` — a silent source of fingerprint drift
+    // across machines. Emitting a fixed shape every run makes the file's
+    // bytes depend only on the committed template + .env values.
+    //
+    // [^\S\n] = whitespace EXCEPT newline, so a key with an empty value (e.g.
+    // `WECHAT_APP_ID =`) doesn't let the match swallow the next line.
+    const regex = new RegExp(`^${key}[^\\S\\n]*=.*$`, 'm');
+
     if (regex.test(content)) {
-      content = content.replace(regex, `$1${finalValue}`);
+      content = content.replace(regex, `${key} = ${finalValue}`.trimEnd());
       // Only log non-empty values (empty values are synced silently)
       if (finalValue !== '') {
         console.log(`  ✓ ${key} = ${finalValue}`);

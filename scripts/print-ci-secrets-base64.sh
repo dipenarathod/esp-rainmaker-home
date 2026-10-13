@@ -21,7 +21,7 @@ SECRETS=(
   "FS_ENV_CN_FILE|.env.cn|cn build (GitHub Actions only)"
   "FS_KEYSTORE_GLOBAL_FILE|android/app/release.global.keystore|global build"
   "FS_KEYSTORE_CN_FILE|android/app/release.cn.keystore|cn build"
-  "FS_GOOGLE_SERVICES_JSON|android/app/google-services.json|global only"
+  "FS_GOOGLE_SERVICES_JSON|android/app/google-services.json|global only (GitHub Actions only)"
   "OTA_SIGNING_KEY_PEM|deployment/ota/certs/private-key.pem|ota publish (both platforms)"
 )
 
