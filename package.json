@@ -1,8 +1,8 @@
 {
   "name": "NOVA",
   "main": "expo-router/entry",
-  "version": "6.3.0",
-  "versionCode": 56,
+  "version": "6.3.1",
+  "versionCode": 57,
   "workspaces": [
     "modules/*"
   ],
@@ -29,6 +29,11 @@
     "web": "node deployment/web/scripts/sync-firebase-messaging-sw.js && expo start --web",
     "build:web": "node deployment/web/scripts/sync-firebase-messaging-sw.js && expo export --platform web -c",
     "deploy:web": "./deployment/web/scripts/deploy-web.sh",
+    "env:pull": "npm run env:pull:global && npm run env:pull:cn && npm run env:pull:web",
+    "env:pull:global": "node scripts/env-pull.js .env.global",
+    "env:pull:cn": "node scripts/env-pull.js .env.cn",
+    "env:pull:web": "node scripts/env-pull.js .env.web",
+    "plist:pull:ios": "node scripts/env-pull.js GoogleService-Info-Global.plist ios/APP/GoogleService-Info-Global.plist",
     "test": "jest --watchAll",
     "lint": "expo lint",
     "lint:arch": "depcruise src config app modules --config .dependency-cruiser.cjs --validate --output-type err",
@@ -42,7 +47,7 @@
   },
   "dependencies": {
     "@espressif/rainmaker-base-cdf": "2.3.0",
-    "@espressif/rainmaker-base-sdk": "3.5.0",
+    "@espressif/rainmaker-base-sdk": "3.5.1",
     "@espressif/rainmaker-matter-sdk": "3.1.0",
     "@espressif/rainmaker-neo-base-sdk": "1.2.1",
     "@expo/vector-icons": "^14.0.2",
@@ -54,6 +59,8 @@
     "@react-native-async-storage/async-storage": "^2.1.2",
     "@react-native-community/checkbox": "^0.5.17",
     "@react-native-community/slider": "5.1.2",
+    "@react-native-firebase/app": "^26.0.0",
+    "@react-native-firebase/crashlytics": "^26.0.0",
     "@react-native-picker/picker": "^2.6.1",
     "@react-navigation/bottom-tabs": "^7.2.0",
     "@react-navigation/native": "^7.0.14",

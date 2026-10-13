@@ -96,6 +96,7 @@ count_lines.py
 
 # Firebase / Google Services (use template for compilation)
 android/app/google-services.json
+ios/APP/GoogleService-Info-Global.plist
 
 # Cursor
 .cursor/expo-env.d.ts

@@ -38,6 +38,8 @@ In **Settings → CI/CD → Variables** (masked + protected):
 | `XCODE_ORG_ID` | Apple Developer Team ID, e.g. `ABCDE12345` |
 | `PRIVATE_TOKEN` | GitLab token with **`read_api`** (Secure Files download) |
 
+Firebase config (`GoogleService-Info-Global.plist`) is also a Secure File — see the table below.
+
 ---
 
 ## mac-mini-runner file (non-secrets)
@@ -90,6 +92,7 @@ Upload in **Settings → CI/CD → Secure Files**. Basenames must match `IOS_CER
 | `example_distribution.p12` | Apple **Distribution** certificate (`.p12` export) |
 | `example_app_adhoc.mobileprovision` | Ad-hoc profile for the main app target |
 | `example_extension_adhoc.mobileprovision` | Ad-hoc profile for an app extension |
+| `GoogleService-Info-Global.plist` | Firebase config for the Global project. Non-default filename is deliberate — see `ios/APP/AppDelegate.mm` (keeps RNFB iOS auto-init off on CN). Devs pull locally via `npm run plist:pull:ios`. |
 
 ---
 

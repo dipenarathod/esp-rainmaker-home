@@ -4,24 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  ESPCDFDeviceParam,
-  ESPCDFSimpleTSDataRequest,
-  ESPCDFTSDataRequest,
-} from "@store";
-import { ESPRMNeoDeviceParam } from "@espressif/rainmaker-neo-base-sdk";
+import { ESPCDFDeviceParam, type ESPCDFDeviceParamOperation } from "@store";
+import type { ESPRMNeoDeviceParam } from "@espressif/rainmaker-neo-base-sdk";
 import {
   DATA_TYPE_STRING,
   ESPRM_PARAM_READ_PROPERTY,
   ESPRM_PARAM_WRITE_PROPERTY,
 } from "@shared/utils/constants";
+import { attachTimeSeriesProvider } from "@shared/timeSeries";
 
-import {
-  toCDFResponseFromNeoAggregates,
-  toCDFResponseFromNeoRaw,
-  toNeoAggregateOptions,
-  toNeoRawOptions,
-} from "../utils/helpers/deviceParamHelpers";
+import { createNeoTimeSeriesProvider } from "../utils/timeSeriesProvider";
 
 /** Default access properties when the SDK omits `properties` on a param. */
 const ESPRMNEO_DEFAULT_PARAM_PROPERTIES = [
@@ -30,63 +22,21 @@ const ESPRMNEO_DEFAULT_PARAM_PROPERTIES = [
 ] as const;
 
 /**
- * Maps an RMNeo device param to an `ESPCDFDeviceParam`, including live
- * operations for value writes and time-series reads.
- *
- * Time-series wiring (RMNeo has no client-picked aggregation and no
- * `simple_ts` endpoint):
- * - `getTSData` → aggregates endpoint (server-windowed stats)
- * - `getRawTSData` / `getSimpleTSData` → raw endpoint (`getSimpleTSData` is
- * CDF parity only)
- * @param param - Raw RMNeo device param from the SDK.
+ * Maps a Neo device param to an `ESPCDFDeviceParam`. Params declaring
+ * `time_series` get a time series provider attached (raw samples and
+ * pre-computed aggregates), which the chart reads through
+ * `getTimeSeriesProvider`.
+ * @param param - Raw Neo device param from the SDK.
  * @returns CDF device param with mapped fields and bound operations.
  */
 export function transformToESPCDFDeviceParam(
   param: ESPRMNeoDeviceParam,
 ): ESPCDFDeviceParam {
-  const operations = {
-    /**
-     * Writes a new value to the param via the SDK.
-     * @param value - Value to set on the device param.
-     * @returns SDK write result.
-     */
-    setValue: async (value: unknown) => {
-      return param.setValue(value);
-    },
-
-    /**
-     * Fetches aggregated time-series via the RMNeo aggregates endpoint.
-     * @param request - CDF aggregated TS request.
-     * @returns CDF-shaped aggregates response.
-     */
-    getTSData: async (request: ESPCDFTSDataRequest) => {
-      const result = await param.getTSData(toNeoAggregateOptions(request));
-      return toCDFResponseFromNeoAggregates(result, request);
-    },
-
-    /**
-     * Fetches raw time-series samples via the RMNeo raw endpoint.
-     * @param request - CDF TS request (raw flavor).
-     * @returns CDF-shaped raw TS response.
-     */
-    getRawTSData: async (request: ESPCDFTSDataRequest) => {
-      const result = await param.getRawTSData(toNeoRawOptions(request));
-      return toCDFResponseFromNeoRaw(result);
-    },
-
-    /**
-     * CDF `simple_ts` parity: RMNeo has no simple-TS API, so this maps onto
-     * the same raw endpoint as `getRawTSData`.
-     * @param request - CDF simple-TS request.
-     * @returns CDF-shaped raw TS response.
-     */
-    getSimpleTSData: async (request: ESPCDFSimpleTSDataRequest) => {
-      const result = await param.getRawTSData(toNeoRawOptions(request));
-      return toCDFResponseFromNeoRaw(result);
-    },
+  const provider = createNeoTimeSeriesProvider(param);
+  const operations: ESPCDFDeviceParamOperation = {
+    setValue: async (value: unknown) => param.setValue(value),
   };
-
-  return new ESPCDFDeviceParam({
+  const cdfParam = new ESPCDFDeviceParam({
     name: param.id || "",
     dataType: param.dataType || DATA_TYPE_STRING,
     type: param.type || "",
@@ -98,4 +48,8 @@ export function transformToESPCDFDeviceParam(
     operations,
     _raw: param,
   });
+  if (provider) {
+    attachTimeSeriesProvider(cdfParam, provider);
+  }
+  return cdfParam;
 }

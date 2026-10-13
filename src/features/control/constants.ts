@@ -34,40 +34,54 @@ export const RMAKER_AUTH_TOAST_KIND_UPDATED = "updated";
 export const RMAKER_AUTH_TOAST_KIND_NO_REFRESH_TOKEN = "no_refresh_token";
 export const RMAKER_AUTH_TOAST_KIND_FAILED = "failed";
 
-// TIME SERIES CHART GRANULARITIES
-/** Chart tab granularity ids (Daily / Weekly / Monthly). */
-export const CHART_GRANULARITY_DAILY = "daily";
-export const CHART_GRANULARITY_WEEKLY = "weekly";
-export const CHART_GRANULARITY_MONTHLY = "monthly";
-/** Tab order shown on the chart screen. */
-export const CHART_GRANULARITIES = [
-  CHART_GRANULARITY_DAILY,
-  CHART_GRANULARITY_WEEKLY,
-  CHART_GRANULARITY_MONTHLY,
-] as const;
+// TIME SERIES CHART: RANGE PRESET KEYS (labels live under `device.chart.preset.*`)
+export const TS_PRESET_1H = "1h";
+export const TS_PRESET_6H = "6h";
+export const TS_PRESET_24H = "24h";
+export const TS_PRESET_1D = "1d";
+export const TS_PRESET_7D = "7d";
+export const TS_PRESET_4W = "4w";
+export const TS_PRESET_1Y = "1y";
 
-// TIME SERIES CHART VIEW STATES
-/** Chart view states (see ChartState in @src/types/global). */
-export const CHART_STATE_LOADING = "loading";
-export const CHART_STATE_ERROR = "error";
-export const CHART_STATE_UNSUPPORTED = "unsupported";
-export const CHART_STATE_EMPTY = "empty";
-export const CHART_STATE_READY = "ready";
+// TIME SERIES CHART: ZOOM
+/** Narrowest window the raw chart can be zoomed into (labels stay distinct at one minute). */
+export const RAW_ZOOM_MIN_SPAN_MS = 5 * 60 * 1000;
 
-// TIME SERIES SUMMARY KINDS
-/** Window summary semantics (see TimeSeriesSummaryKind). */
-export const TS_SUMMARY_KIND_AVERAGE = "average";
-export const TS_SUMMARY_KIND_TOTAL = "total";
+// TIME SERIES CHART: RAW SAMPLE CAPS
+/** Raw pages are followed newest-first until this many samples are held (20 classic pages of 200). */
+export const RAW_MAX_SAMPLES = 4000;
+/** Samples handed to the renderer at most; the series is downsampled beyond this. */
+export const RAW_RENDER_SAMPLES = 600;
 
-// TIME SERIES CHART DATA
-/** Number of buckets (bars) in one chart window, matching the revamp design. */
-export const CHART_WINDOW_BUCKET_COUNT = 7;
-/** Max records per simple_ts page (Base SDK `MAX_RESULT_COUNT`). */
-export const TS_PAGE_RESULT_COUNT = 200;
-/** Safety cap on simple_ts pagination fetches per window (memory guard). */
-export const TS_MAX_PAGE_FETCHES = 20;
-/** Week starts on Monday, matching the app-wide week alignment. */
-export const CHART_WEEK_START_DAY_INDEX = 1;
+// TIME SERIES CHART: FETCH PLANS (how a range is served, see `resolveFetchPlan`)
+/** Server-computed buckets. */
+export const TS_FETCH_PLAN_SERVER = "server";
+/** Raw samples plotted as-is. */
+export const TS_FETCH_PLAN_RAW = "raw";
+/** Range exceeds every cap of the backend. */
+export const TS_FETCH_PLAN_UNSUPPORTED = "unsupported";
+
+// TIME SERIES CHART: EMPTY STATE KINDS (i18n under `device.chart.empty.*`)
+export const TS_EMPTY_KIND_NO_TIME_SERIES = "noTimeSeries";
+export const TS_EMPTY_KIND_NO_DATA = "noData";
+export const TS_EMPTY_KIND_UNSUPPORTED = "unsupported";
+export const TS_EMPTY_KIND_ERROR = "error";
+
+// TIME SERIES CHART: X-AXIS LABEL FORMATS (resolved from tab + range, see `resolveXLabelKind`)
+/** `14:00` — hourly buckets or raw samples within one day. */
+export const TS_X_LABEL_TIME = "time";
+/** `Fri` — hourly buckets or raw samples over several days, up to a week of daily buckets. */
+export const TS_X_LABEL_WEEKDAY = "weekday";
+/** `12 Sep` — daily buckets beyond a week, weekly buckets. */
+export const TS_X_LABEL_DAY_MONTH = "dayMonth";
+/** `Sep` — up to a year of monthly buckets. */
+export const TS_X_LABEL_MONTH = "month";
+/** `Sep 26` — monthly buckets beyond a year. */
+export const TS_X_LABEL_MONTH_YEAR = "monthYear";
+
+// TIME SERIES CHART: FOOTNOTE KINDS (i18n under `device.chart.notes.*`)
+export const TS_NOTE_RAW_TRUNCATED = "rawTruncated";
+export const TS_NOTE_DOWNSAMPLED = "downsampled";
 
 // RainMaker cloud command-response (cmd-resp) — canonical defs in `@shared/utils/constants`.
 export {

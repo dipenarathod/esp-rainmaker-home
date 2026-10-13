@@ -29,6 +29,11 @@ const PATHS = {
   env: path.isAbsolute(ENV_FILE) ? ENV_FILE : path.join(ROOT, ENV_FILE),
   packageJson: path.join(ROOT, 'package.json'),
   xcconfig: path.join(ROOT, 'ios/APP.xcconfig'),
+  googleServiceInfo: path.join(ROOT, 'ios/APP/GoogleService-Info-Global.plist'),
+  googleServiceInfoTemplate: path.join(
+    ROOT,
+    'ios/APP/GoogleService-Info-Global.plist.template'
+  ),
 };
 
 /**
@@ -267,6 +272,28 @@ function updateXcconfig(file, env) {
 /* =====================================================
  * Main
  * ===================================================== */
+/**
+ * Materialises the Firebase config from its template when absent, so a checkout
+ * without CI secrets still compiles.
+ * @returns {boolean} Whether a config file is present afterwards.
+ */
+function ensureGoogleServiceInfoExists() {
+  if (fs.existsSync(PATHS.googleServiceInfo)) return true;
+
+  if (fs.existsSync(PATHS.googleServiceInfoTemplate)) {
+    fs.copyFileSync(PATHS.googleServiceInfoTemplate, PATHS.googleServiceInfo);
+    console.log(
+      '  ✓ GoogleService-Info-Global.plist created from template (placeholder values)'
+    );
+    return true;
+  }
+
+  console.warn(
+    '  ⚠ GoogleService-Info-Global.plist not found and no template available — Crashlytics will not initialise'
+  );
+  return false;
+}
+
 function main() {
   console.log('🔄 Syncing iOS config from .env (+ package.json version)');
 
@@ -280,6 +307,7 @@ function main() {
   console.log(`  ✓ APP_VERSION = ${env.APP_VERSION} (from package.json)`);
 
   updateXcconfig(PATHS.xcconfig, env);
+  ensureGoogleServiceInfoExists();
 
   console.log('✅ IOS Sync complete');
 }

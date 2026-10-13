@@ -402,6 +402,32 @@ platform :ios do
         teamID: xcode_team_id
       }
     )
+
+    upload_crashlytics_symbols
+  end
+
+  # Uploads dSYMs so Crashlytics can symbolicate native frames. Non-fatal: this
+  # must not fail a build that already produced a signed IPA.
+  private_lane :upload_crashlytics_symbols do
+    gsp = File.join(IOS_DIR, "APP", "GoogleService-Info-Global.plist")
+    dsym = lane_context[SharedValues::DSYM_OUTPUT_PATH]
+
+    if !File.exist?(gsp)
+      UI.important("Skipping Crashlytics symbols: #{gsp} not found")
+    elsif dsym.nil? || !File.exist?(dsym)
+      UI.important("Skipping Crashlytics symbols: no dSYM produced by build_app")
+    else
+      begin
+        # gsp_path is explicit because the config is not the default plist name.
+        upload_symbols_to_crashlytics(
+          dsym_path: dsym,
+          gsp_path: gsp,
+          binary_path: File.join(IOS_DIR, "Pods", "FirebaseCrashlytics", "upload-symbols")
+        )
+      rescue StandardError => e
+        UI.important("Crashlytics symbol upload failed (non-fatal): #{e.message}")
+      end
+    end
   end
 
   after_all do |_lane|

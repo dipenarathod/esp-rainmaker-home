@@ -18,63 +18,125 @@ import { tokens } from "@shared/theme/tokens";
 import { paramControlStyles as styles } from "./lib/styles";
 
 // Icons
-import { Edit3, Save, X } from "lucide-react-native";
+import { ChartNoAxesCombined, Edit3, Save, X } from "lucide-react-native";
 
 // Types
 import { ParamControlChildProps } from "./lib/types";
 import { observer } from "mobx-react-lite";
+import { useTranslation } from "react-i18next";
+
+/**
+ * Whether a text param has nothing to show yet.
+ * @param value - Current param value from the wrap
+ * @returns True for null, undefined or an empty string
+ */
+const isEmptyTextValue = (value: unknown): boolean =>
+  value === null || value === undefined || value === "";
 
 /**
  * TextInput
  *
- * A text input component with modal editing interface.
- * Allows users to view and edit text values with character limit support.
- * @param param - The parameter object containing value, bounds, and setValue function
- * @param disabled - Optional flag to disable the control
- * @returns Read-only row that opens a modal editor with save/cancel and max length
+ * `esp.ui.text` row: view the value, optionally edit it when `write` is
+ * present (`disabled` is false), and open the time-series chart when
+ * `onOpenChart` is set (`read` + `time_series`).
+ * @param label - Param display label
+ * @param value - Current param value
+ * @param onValueChange - Persist handler from ParamControlWrap
+ * @param disabled - True when `write` is missing or the node is unreachable
+ * @param meta - Optional bounds (`maxLength`)
+ * @param onOpenChart - Chart entry for time-series text params
+ * @param compact - Fallback list density (vertical padding)
+ * @returns Text row with optional edit modal and chart icon
  */
 const TextInput = observer(
-  ({ label, value, onValueChange, disabled, meta }: ParamControlChildProps) => {
-    // State
+  ({
+    label,
+    value,
+    onValueChange,
+    disabled,
+    meta,
+    onOpenChart,
+    compact = false,
+  }: ParamControlChildProps) => {
+    const { t } = useTranslation();
     const [isEditing, setIsEditing] = useState(false);
-    const [tempValue, setTempValue] = useState(String(value || ""));
+    const [tempValue, setTempValue] = useState(String(value ?? ""));
 
-    // Computed values
     const maxLength = meta?.maxLength ?? 50;
+    const canEdit = !disabled;
+    const canOpenChart = Boolean(onOpenChart);
+    // Empty writable rows keep the edit placeholder; read-only telemetry shows "not available".
+    const displayValue = isEmptyTextValue(value)
+      ? t(canEdit ? "common.enterText" : "common.notAvailable")
+      : String(value);
 
-    // Handlers
+    /**
+     * Opens the edit modal when the param is writable.
+     */
     const handleEdit = () => {
-      if (disabled) return;
-      setTempValue(String(value || ""));
+      if (!canEdit) return;
+      setTempValue(String(value ?? ""));
       setIsEditing(true);
     };
 
+    /**
+     * Row press: edit when writable, otherwise open the chart if available.
+     */
+    const handleRowPress = () => {
+      if (canEdit) {
+        handleEdit();
+        return;
+      }
+      onOpenChart?.();
+    };
+
+    /**
+     * Opens the time-series chart without starting an edit.
+     */
+    const handleChartPress = () => {
+      onOpenChart?.();
+    };
+
+    /**
+     * Persists the modal value and closes the editor.
+     */
     const handleSave = async () => {
       onValueChange?.(null, tempValue);
       setIsEditing(false);
     };
 
+    /**
+     * Discards the modal value and closes the editor.
+     */
     const handleCancel = () => {
-      setTempValue(String(value || ""));
+      setTempValue(String(value ?? ""));
       setIsEditing(false);
     };
 
-    // Render
     return (
       <>
         <TouchableOpacity
-          style={[styles.container]}
-          onPress={handleEdit}
-          disabled={disabled}
+          style={[styles.container, compact && styles.containerCompact]}
+          onPress={handleRowPress}
+          disabled={!canEdit && !canOpenChart}
         >
           <View style={styles.content}>
             <View style={styles.textContainer}>
               <Text style={styles.title}>{label}</Text>
               <Text style={styles.value} numberOfLines={1}>
-                {value || "Enter text"}
+                {displayValue}
               </Text>
             </View>
-            {!disabled && <Edit3 size={20} color={tokens.colors.gray} />}
+            <View style={styles.iconCluster}>
+              {canOpenChart && canEdit ? (
+                <TouchableOpacity onPress={handleChartPress} hitSlop={8}>
+                  <ChartNoAxesCombined size={20} color={tokens.colors.gray} />
+                </TouchableOpacity>
+              ) : canOpenChart ? (
+                <ChartNoAxesCombined size={20} color={tokens.colors.gray} />
+              ) : null}
+              {canEdit ? <Edit3 size={20} color={tokens.colors.gray} /> : null}
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -92,7 +154,7 @@ const TextInput = observer(
                 style={styles.textInput}
                 value={tempValue}
                 onChangeText={setTempValue}
-                placeholder="Enter text"
+                placeholder={t("common.enterText")}
                 maxLength={maxLength}
                 autoFocus
                 selectTextOnFocus
@@ -104,7 +166,7 @@ const TextInput = observer(
                   onPress={handleCancel}
                 >
                   <X size={20} color={tokens.colors.gray} />
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles.cancelButtonText}>{t("common.cancel")}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -112,7 +174,7 @@ const TextInput = observer(
                   onPress={handleSave}
                 >
                   <Save size={20} color={tokens.colors.white} />
-                  <Text style={styles.saveButtonText}>Save</Text>
+                  <Text style={styles.saveButtonText}>{t("common.save")}</Text>
                 </TouchableOpacity>
               </View>
             </View>

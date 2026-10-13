@@ -14,10 +14,53 @@
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
 #import <TargetConditionals.h>
 #import "APP-Swift.h"
+#import <FirebaseCore/FirebaseCore.h>
 
 @interface RCTAppDelegate (Private)
 - (void)loadReactNativeWindow:(NSDictionary *)launchOptions;
 @end
+
+/**
+ * Starts Firebase unless the device Region is China.
+ *
+ * The plist is deliberately NOT named GoogleService-Info.plist: RNFirebase
+ * auto-configures on that name, which would initialise Firebase on CN devices
+ * too. Renaming it back silently defeats the gate.
+ *
+ * NSLocaleCountryCode is the same value expo-localization reports as
+ * regionCode, so this matches isCnRegion() in config/region.config.ts while
+ * APP_REGION stays `auto` on iOS. A build that hard-sets APP_REGION would
+ * diverge: JS honours it, this runs off the device Region either way.
+ */
+static void ESPConfigureFirebaseUnlessCnRegion(void)
+{
+  NSString *region =
+      [[[NSLocale currentLocale] objectForKey:NSLocaleCountryCode] lowercaseString];
+  if ([region isEqualToString:@"cn"]) {
+    return;
+  }
+
+  NSString *path = [[NSBundle mainBundle] pathForResource:@"GoogleService-Info-Global"
+                                                   ofType:@"plist"];
+  if (path == nil) {
+    return;
+  }
+
+  FIROptions *options = [[FIROptions alloc] initWithContentsOfFile:path];
+  if (options == nil) {
+    return;
+  }
+
+  // A checkout without CI secrets gets the placeholder template from
+  // scripts/sync-env-to-ios.js — never point a dev build at Firebase with it.
+  if ([options.googleAppID containsString:@"000000000000"]) {
+    return;
+  }
+
+  if ([FIRApp defaultApp] == nil) {
+    [FIRApp configureWithOptions:options];
+  }
+}
 
 
 @implementation AppDelegate
@@ -25,6 +68,10 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
+  // Before React Native starts, so Crashlytics catches early-launch crashes.
+  // First, so a crash in the audio setup below is reported too.
+  ESPConfigureFirebaseUnlessCnRegion();
+
   // Route WebRTC camera audio through the loudspeaker/media path instead of the
   // default call-style earpiece path. This must be configured via WebRTC's own
   // audio-session configuration before the module starts, otherwise WebRTC will

@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       CN-flavor-only components. WeChat login ships only in the CN build (the
@@ -11,6 +12,22 @@
     </queries>
 
     <application>
+
+        <!-- OTA URL override: CN APK fetches CN-built bundles. See deployment/ota/README.md. -->
+        <meta-data
+            android:name="expo.modules.updates.EXPO_UPDATE_URL"
+            android:value="https://app.rainmaker.espressif.com/ota/prod/cn/android/manifest.json"
+            tools:replace="android:value" />
+
+        <!--
+          Belt-and-braces for the CN Firebase exclusion. The Crashlytics gradle
+          plugin is already gated to non-CN builds, but autolinking still links
+          the RNFirebase module into every variant, so pin collection off here
+          too: CN must never attempt to report to Google.
+        -->
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
 
         <!--
           WeChat OAuth callback activity. The WeChat SDK delivers the auth result

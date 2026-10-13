@@ -23,7 +23,7 @@ rmneo:
   type: neo
   region: global
   # Endpoint precedence at load time (utils/rainmaker_cloud.py::_populate_rmneo_from_s3):
-  #   1. Values set below (env-expanded from RMNEO_* keys, populated in CI by ci_setup_config.py from FS_ENV_*_FILE base64)
+  #   1. Values set below (env-expanded from RMNEO_* keys, populated in CI by ci_setup_config.py from the repo-root .env written from the .env.<flavor> Secure File)
   #   2. Fetched from RMNEO_DEPLOYMENT_URL (S3 client-outputs bundle)
   # Example S3 URL: https://<bucket>.s3.<region>.amazonaws.com/<region>/rmneo-client-outputs.json
   uri: "${RMNEO_BASE_URL}"

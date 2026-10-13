@@ -15,7 +15,7 @@
 #   - Optional: APP_ASSETS_URL, WEB_DEPLOY_ENV (prod), WEB_DEPLOY_REGION (global|cn)
 #   - Optional: SKIP_WEB_BUILD=1 to reuse an existing dist/ (skips build:web only; still runs npm ci)
 #   - Optional: WEB_DEPLOY_FORCE=1 to overwrite an existing version prefix (rollback contract off)
-#   - .env.web locally, or FS_ENV_WEB_FILE (base64) in CI/CD
+#   - .env.web locally (via `npm run env:pull:web`), or Secure File .env.web in CI/CD
 #   - Optional local tracking: copy deployment/web/cdn.yaml.example → deployment/web/cdn.yaml
 #
 # Usage (from repo root):

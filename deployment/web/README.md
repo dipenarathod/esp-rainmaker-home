@@ -95,7 +95,7 @@ The file is **gitignored**; only `cdn.yaml.example` is committed.
 | --- | --- |
 | Node.js 22+ | Same as mobile CI |
 | AWS CLI v2 | `aws sts get-caller-identity` must work |
-| `.env.web` | Copy `.env.web.example` and fill it in locally, or supply `FS_ENV_WEB_FILE` (base64) in CI |
+| `.env.web` | `npm run env:pull:web` (GitLab Secure File), or copy `.env.web.example` and fill it in; CI downloads the Secure File itself |
 | `deployment/web/cdn.yaml` | Optional; auto-created from example |
 
 ### CI / env variables
@@ -109,7 +109,10 @@ The file is **gitignored**; only `cdn.yaml.example` is committed.
 | `APP_ASSETS_S3_BUCKET` | Shared assets bucket (hosts `web/` + `ota/`) |
 | `CLOUDFRONT_DISTRIBUTION_ID` | Distribution in front of that bucket |
 | `APP_ASSETS_URL` | Optional — CDN base URL printed after deploy |
-| `FS_ENV_WEB_FILE` | Base64-encoded `.env.web` (CI only) |
+
+`.env.web` is not a CI variable. Upload it as a GitLab Secure File named `.env.web`
+(Settings → CI/CD → Secure Files); the `web_deploy` job downloads it into
+`.secure_files/` and copies it into place.
 
 Optional overrides:
 
@@ -123,7 +126,7 @@ Optional overrides:
 
 > **`WEB_DEPLOY_REGION` vs `APP_REGION`.** `WEB_DEPLOY_REGION` only picks the S3 folder the export lands in (`web/<env>/<region>/…`). The RainMaker cloud the app talks to is controlled by `APP_REGION` in the bundle's `.env.web` and resolved at runtime by `getActiveRegion()` in `config/region.config.ts`. Publishing to `WEB_DEPLOY_REGION=cn` does **not** by itself point the app at the CN cloud.
 
-Generate `FS_ENV_WEB_FILE` (and list the plain-text AWS vars):
+To list the plain-text AWS variables above:
 
 ```bash
 ./scripts/print-ci-secrets-base64.sh
@@ -152,7 +155,7 @@ npm run deploy:web
 What the script does:
 
 1. Validates AWS credentials and required bucket / distribution vars  
-2. Writes `.env.web` from `FS_ENV_WEB_FILE` when set (CI)  
+2. Writes `.env.web` from the downloaded Secure File (`.secure_files/.env.web`) in CI, or uses the local file  
 3. Resolves env/region from `deployment/web/cdn.yaml` (overridable via `WEB_DEPLOY_*`)  
 4. `npm ci` → `npm run build:web` with `WEB_BASE_URL=/web/<env>/<region>/<version>` (Expo Router base), unless `SKIP_WEB_BUILD=1`  
 5. Rewrites `dist/_expo/` → `dist/expo/` (needed because `aws s3 sync` skips `_` roots)  
@@ -225,9 +228,9 @@ curl -s "${APP_ASSETS_URL%/}/web/prod/${REGION}/latest/manifest.json"
 
 ## Troubleshooting
 
-### `Missing .env.web` or `FS_ENV_WEB_FILE`
+### `Missing .env.web (local) or Secure File .env.web`
 
-Copy `.env.web.example` to `.env.web` and fill it in, or set the base64 CI variable via `./scripts/print-ci-secrets-base64.sh`.
+Locally: run `npm run env:pull:web`, or copy `.env.web.example` to `.env.web` and fill it in. In CI: upload `.env.web` as a GitLab Secure File with that exact name.
 
 ### `Access Denied` on `aws s3 sync`
 
@@ -267,7 +270,7 @@ FCM registers `firebase-messaging-sw.js` from the version folder. Browsers only 
 | `deployment/web/cloudfront/web-spa-router.js` | CloudFront Function: versioned SPA + `latest` bounce → `index.html` |
 | `deployment/web/cdn/latest-redirect.html` | Uploaded as `latest/index.html`; fetch manifest → redirect |
 | `deployment/web/scripts/apply-web-spa-cloudfront-function.sh` | Publish + attach the SPA Function to the distribution |
-| `scripts/print-ci-secrets-base64.sh` | Print CI secrets including web vars |
+| `scripts/print-ci-secrets-base64.sh` | List the web deploy CI variables (and base64 Android secrets) |
 | `deployment/web/scripts/sync-firebase-messaging-sw.js` | Bake Firebase config before build |
 | `.gitlab-ci.yml` | Manual `web_deploy` on `release/*` |
 | `package.json` | `build:web`, `deploy:web` |

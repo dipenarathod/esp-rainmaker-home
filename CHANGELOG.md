@@ -5,6 +5,35 @@ All notable changes to the ESP RainMaker Home app will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.1]
+
+### Added
+
+- **Firebase Crashlytics crash reporting**
+  - Report native and JavaScript crashes from the Global app on Android and iOS; China-region builds and devices send nothing
+  - Upload R8 mappings and dSYMs from CI so native frames arrive symbolicated
+  - Archive release JavaScript source maps as 30-day pipeline artifacts (see `docs/CRASH_SYMBOLICATION.md`)
+
+- **OTA updates for the China Android app**
+  - The CN APK now fetches CN-built bundles from its own `/ota/prod/cn/` channel via a dedicated publish job
+
+### Changed
+
+- **Time series charts**
+  - Pinch-to-zoom, drag-to-pan, and double-tap zoom on raw time series charts, with axes and labels recomputed from the visible viewport
+  - Standardized preset spans and navigation across all window granularities; statistic selection moved into the preset/navigation row
+  - Improved X/Y label distribution and bar sizing; support for generalized read-only time series parameters
+
+- **Developer and CI workflow**
+  - Region env files (`.env.global` / `.env.cn` / `.env.web`) move to GitLab Secure Files; `npm run env:pull` fetches them locally
+  - The pre-commit OTA fingerprint drift check now runs only on `pre-release/*` branches
+
+- Update `@espressif/rainmaker-base-sdk` to 3.5.1
+
+### Fixed
+
+- Tooltip and point rendering for empty time series buckets
+
 ## [6.3.0]
  
 ### Added
