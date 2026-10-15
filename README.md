@@ -44,8 +44,8 @@ nvm use 22
 npm install
 
 # Configure environment. Internal devs pull .env.global / .env.cn / .env.web
-# from GitLab Secure Files (one-time: `brew install glab` then
-# `glab auth login --hostname gitlab.espressif.cn:6688`):
+# from the internal GitLab Secure Files (requires glab installed and
+# authenticated to the internal host; see docs/CONFIGURATION.md):
 npm run env:pull                        # or env:pull:global / env:pull:cn / env:pull:web
 # Forks / open-source: copy the committed templates instead:
 cp .env.global.example .env.global      # or: cp .env.cn.example .env.cn

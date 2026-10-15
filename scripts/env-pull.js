@@ -39,8 +39,17 @@ if (!name) {
   process.exit(1);
 }
 
-const HOST = process.env.GITLAB_HOST || "gitlab.espressif.cn:6688";
-const PROJECT = process.env.GITLAB_PROJECT || "app-frameworks/esp-rainmaker-home";
+// GITLAB_HOST and GITLAB_PROJECT must be set in your shell (or via your
+// dotenv tool) to point at the GitLab instance + project that owns the
+// Secure Files.
+const HOST = process.env.GITLAB_HOST;
+const PROJECT = process.env.GITLAB_PROJECT;
+if (!HOST || !PROJECT) {
+  console.error(
+    "env-pull: set GITLAB_HOST and GITLAB_PROJECT (e.g. GITLAB_HOST=gitlab.example.com:1234 GITLAB_PROJECT=group/repo)."
+  );
+  process.exit(1);
+}
 
 const out = path.resolve(outArg || name);
 const relOut = path.relative(process.cwd(), out) || name;
