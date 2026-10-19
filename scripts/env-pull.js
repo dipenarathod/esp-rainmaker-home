@@ -15,12 +15,21 @@
  * When out-path is omitted, writes to the repo root under the Secure File's
  * own name.
  *
+ * Behavior on failure:
+ *   - If the download (or any prerequisite like `glab`/auth) fails but the
+ *     target file already exists on disk, exits 0 after printing a warning
+ *     with the existing file's mtime. Lets `prebuild:latest` degrade to the
+ *     local copy instead of blocking the build.
+ *   - Only exits non-zero when the pull fails AND no local fallback exists.
+ *
  * Env overrides (useful when cloning from the GitHub mirror):
  *   GITLAB_HOST    — override the default GitLab host
  *   GITLAB_PROJECT — override the default project path
  */
 
 const { execFileSync, spawnSync } = require("child_process");
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 const name = process.argv[2];
@@ -30,8 +39,20 @@ if (!name) {
   process.exit(1);
 }
 
-const HOST = process.env.GITLAB_HOST || "gitlab.espressif.cn:6688";
-const PROJECT = process.env.GITLAB_PROJECT || "app-frameworks/esp-rainmaker-home";
+// GITLAB_HOST and GITLAB_PROJECT must be set in your shell (or via your
+// dotenv tool) to point at the GitLab instance + project that owns the
+// Secure Files.
+const HOST = process.env.GITLAB_HOST;
+const PROJECT = process.env.GITLAB_PROJECT;
+if (!HOST || !PROJECT) {
+  console.error(
+    "env-pull: set GITLAB_HOST and GITLAB_PROJECT (e.g. GITLAB_HOST=gitlab.example.com:1234 GITLAB_PROJECT=group/repo)."
+  );
+  process.exit(1);
+}
+
+const out = path.resolve(outArg || name);
+const relOut = path.relative(process.cwd(), out) || name;
 
 function hasGlab() {
   const r = spawnSync("glab", ["--version"], { stdio: "ignore" });
@@ -43,19 +64,38 @@ function isAuthenticated() {
   return r.status === 0;
 }
 
-if (!hasGlab()) {
-  console.error("glab CLI not found.\n  Install: brew install glab");
+/**
+ * Called whenever the fetch can't complete. If the target already exists on
+ * disk, log a warning and exit 0 so the caller (e.g. `prebuild:latest`) keeps
+ * going with the stale-but-present local copy. If the target is missing,
+ * exit 1 with the original failure reason so the build halts.
+ */
+function fallbackOrFail(reason) {
+  if (fs.existsSync(out)) {
+    const mtime = fs.statSync(out).mtime.toISOString();
+    console.warn(`⚠ ${reason}`);
+    console.warn(`  Using existing ${relOut} (mtime: ${mtime})`);
+    process.exit(0);
+  }
+  console.error(`✗ ${reason}`);
+  console.error(`  No local ${relOut} to fall back to.`);
   process.exit(1);
+}
+
+if (!hasGlab()) {
+  fallbackOrFail("glab CLI not found (install: brew install glab)");
 }
 
 if (!isAuthenticated()) {
-  console.error(
-    `Not authenticated to GitLab.\n  Run: glab auth login --hostname ${HOST}`
+  fallbackOrFail(
+    `Not authenticated to GitLab (run: glab auth login --hostname ${HOST})`
   );
-  process.exit(1);
 }
 
-const out = path.resolve(outArg || name);
+// Download to a temp path first, then atomic-rename into place. Prevents a
+// partially-written file from clobbering a working local copy if the stream
+// aborts mid-download.
+const tmp = path.join(os.tmpdir(), `env-pull-${process.pid}-${path.basename(name)}`);
 console.log(`Fetching ${name} from ${HOST}/${PROJECT}…`);
 
 try {
@@ -69,12 +109,27 @@ try {
       "--name",
       name,
       "--path",
-      out,
+      tmp,
     ],
     { stdio: "inherit" }
   );
-  console.log(`✓ Wrote ${path.relative(process.cwd(), out) || name}`);
 } catch (e) {
-  console.error(`Failed to download ${name}: ${e.message || e}`);
-  process.exit(1);
+  try { fs.rmSync(tmp, { force: true }); } catch {}
+  fallbackOrFail(`Failed to download ${name}: ${e.message || e}`);
 }
+
+try {
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.renameSync(tmp, out);
+} catch (e) {
+  // renameSync across filesystems fails with EXDEV — copy+unlink in that case.
+  if (e.code === "EXDEV") {
+    fs.copyFileSync(tmp, out);
+    fs.rmSync(tmp, { force: true });
+  } else {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    fallbackOrFail(`Failed to write ${relOut}: ${e.message || e}`);
+  }
+}
+
+console.log(`✓ Wrote ${relOut}`);

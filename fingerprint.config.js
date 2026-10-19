@@ -8,6 +8,12 @@
 // before hashing. Otherwise writing the fingerprint back into these files
 // (via deployment/ota/scripts/sync-runtime-version.js) would perturb the hash that
 // produced it — a self-referential loop.
+//
+// Also strip ANDROID_VERSION_CODE from android/gradle.properties: versionCode
+// is a build-number knob that bumps per OTA / per release and doesn't change
+// the native ABI, so it shouldn't move the fingerprint. Without this elide,
+// every `versionCode` bump in package.json would mint a new runtime version
+// and orphan already-shipped binaries from the OTA they expect.
 const RUNTIME_VERSION_STRIPPERS = {
   'ios/APP/Supporting/Expo.plist': (buf) =>
     buf.replace(
@@ -18,6 +24,11 @@ const RUNTIME_VERSION_STRIPPERS = {
     buf.replace(
       /(android:name="expo\.modules\.updates\.EXPO_RUNTIME_VERSION"[\s\S]*?android:value=")[^"]*(")/,
       '$1RUNTIME_VERSION_ELIDED_FOR_FINGERPRINT$2'
+    ),
+  'android/gradle.properties': (buf) =>
+    buf.replace(
+      /^(ANDROID_VERSION_CODE=).*$/m,
+      '$1VERSION_CODE_ELIDED_FOR_FINGERPRINT'
     ),
 };
 
@@ -49,9 +60,22 @@ module.exports = {
     '**/android/build/**',
     '**/android/.gradle/**',
     '**/android/.cxx/**',
+    '**/android/.kotlin/**',
     '**/android/app/build/**',
     '**/ios/build/**',
     '**/ios/DerivedData/**',
+    // Android Studio / Eclipse Buildship descriptors generated the first time
+    // someone opens `android/` in the IDE — including inside node_modules/*.
+    // Not shipped, not part of the ABI. Without these, devs who've imported
+    // into Android Studio get a different fingerprint (iOS *and* Android)
+    // from a fresh checkout; the files feed @expo/fingerprint's shared
+    // source set, which both per-platform hashes derive from.
+    '**/.project',
+    '**/.classpath',
+    '**/.settings/**',
+    // Buildship compiles Expo gradle-plugin Kotlin sources into bin/ after an
+    // IDE import — the same source as src/main/, just mirrored.
+    '**/*-gradle-plugin/bin/**',
   ],
 
   // Native config files here are small (<10 KB) and always arrive in one

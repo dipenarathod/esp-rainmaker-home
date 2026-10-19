@@ -401,10 +401,14 @@ function validateKeystore(env) {
   }
 
   if (!fs.existsSync(absPath)) {
-    console.error(
-      `  ✗ keystore file not found: android/app/${storeFile} — need ANDROID_KEYSTORE_FILE`
+    // Downgraded from fatal: a dev running `prebuild:latest` to refresh env
+    // config shouldn't need the release keystore locally. CI validates the
+    // secret's presence separately (see android_apk in .gitlab-ci.yml), and
+    // Gradle will fail at signing time if the file is still missing by then.
+    console.warn(
+      `  ⚠ keystore file not found: android/app/${storeFile} — skipping validation (prebuild env-sync continues)`
     );
-    process.exit(1);
+    return;
   }
 
   const list = runKeytool(['-list', '-keystore', absPath, '-storepass', storePassword]);
