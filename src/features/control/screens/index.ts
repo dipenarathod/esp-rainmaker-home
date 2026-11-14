@@ -8,6 +8,7 @@ export { default as Control } from "./Control";
 export { default as Chart } from "./Chart";
 export { default as Guide } from "./Guide";
 export { default as Settings } from "./Settings";
+export { default as MusicSync } from "./MusicSync";
 export { default as Fallback } from "./device_panels/Fallback";
 export { default as Light } from "./device_panels/Light";
 export { default as Switch } from "./device_panels/Switch";

@@ -27,6 +27,7 @@ import {
 import {
   DeviceName,
   DeviceInfo,
+  StripSetup,
   DeviceRoomAssignment,
   DeviceControlGroupAssignment,
   OTA,
@@ -142,6 +143,9 @@ const Settings = observer(() => {
             otaInfo={otaInfo}
             disabled={settingsDisabled}
           />
+
+          {/* LED strip controllers: LED count, PSU rating (renders nothing otherwise) */}
+          <StripSetup device={device} disabled={settingsDisabled} />
 
           <DeviceRoomAssignment node={node} disabled={!isPrimary} />
 

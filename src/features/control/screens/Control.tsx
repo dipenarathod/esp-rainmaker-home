@@ -36,16 +36,22 @@ import LightControl from "./device_panels/Light";
 import SwitchControl from "./device_panels/Switch";
 import AiAgentControl from "./device_panels/AiAgent";
 import CameraControl from "./device_panels/Camera";
+import LedStripControl from "./device_panels/LedStrip";
 
 // Utils
 import { testProps } from "@shared/utils/testProps";
 import { readAttributesForNodeId } from "@shared/utils/matterAttributeRead";
+import {
+  CDF_ATTR_PANEL,
+  getDeviceAttribute,
+} from "@features/control/utils/deviceAttributes";
 
 const CONTROL_PANELS: Record<string, React.FC<any>> = {
   light: LightControl,
   switch: SwitchControl,
   "ai-agent": AiAgentControl,
   camera: CameraControl,
+  ledstrip: LedStripControl,
 };
 
 /**
@@ -95,7 +101,16 @@ const Control = () => {
   const renderDeviceControl = () => {
     if (!device) return null;
 
-    if (!deviceConfig || !deviceConfig.controlPanel) {
+    // Firmware can pick a panel explicitly (e.g. a standard light that is
+    // really an LED strip controller sets cdf.panel = "ledstrip"). Assistants
+    // only see the standard type, so voice control is unaffected.
+    const panelAttr = getDeviceAttribute(device, CDF_ATTR_PANEL);
+    const panelKey =
+      panelAttr && CONTROL_PANELS[panelAttr]
+        ? panelAttr
+        : deviceConfig?.controlPanel;
+
+    if (!panelKey) {
       return (
         <Fallback
           node={node as NonNullable<typeof node>}
@@ -106,7 +121,7 @@ const Control = () => {
     }
 
     const ControlPanel =
-      CONTROL_PANELS[deviceConfig.controlPanel as keyof typeof CONTROL_PANELS];
+      CONTROL_PANELS[panelKey as keyof typeof CONTROL_PANELS];
     if (!ControlPanel) {
       return (
         <Fallback

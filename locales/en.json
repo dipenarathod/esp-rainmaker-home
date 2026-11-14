@@ -825,6 +825,7 @@
       "deviceInfoTitle": "Node Information",
       "deviceInfoIdLabel": "Node ID",
       "deviceInfoVersionLabel": "Version",
+      "stripSetupTitle": "Strip Setup",
       "otaTitle": "OTA",
       "otaCurrentVersionLabel": "Current Version",
       "otaNewVersionLabel": "New Version",

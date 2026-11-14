@@ -16,6 +16,7 @@ export * from "./Charts";
 // Device settings (device-level settings UI for control Settings screen)
 export { default as DeviceName } from "./DeviceSettings/DeviceName";
 export { default as DeviceInfo } from "./DeviceSettings/DeviceInfo";
+export { default as StripSetup } from "./DeviceSettings/StripSetup";
 export { default as OTA } from "./DeviceSettings/OTA";
 export { default as DeviceOperations } from "./DeviceSettings/DeviceOperations";
 export { default as SettingsQuickActions } from "./DeviceSettings/SettingsQuickActions";
