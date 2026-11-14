@@ -41,12 +41,22 @@ interface ConfirmationDialogProps {
   onConfirm: () => void;
   /** Callback when cancelled */
   onCancel?: () => void;
+  /**
+   * Called when the dialog is closed without pressing a button (Android
+   * back). Defaults to `onCancel`; set it when the cancel button does more
+   * than close the dialog.
+   */
+  onDismiss?: () => void;
   /** Color of confirm button */
   confirmColor?: string;
   /** Show loading spinner */
   isLoading?: boolean;
   /** QA automation identifier */
   qaId?: string;
+  /** Optional content above the title, such as a logo */
+  header?: ReactNode;
+  /** Optional content between the description and the buttons */
+  children?: ReactNode;
 }
 
 /**
@@ -61,9 +71,12 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
   cancelText = "Cancel",
   onConfirm,
   onCancel,
+  onDismiss,
   confirmColor = tokens.colors.primary,
   isLoading = false,
   qaId,
+  header,
+  children,
 }) => {
   const [internalOpen, setInternalOpen] = useState(false);
   const isVisible = open ?? internalOpen;
@@ -78,6 +91,15 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
     onConfirm();
   };
 
+  const handleDismiss = () => {
+    if (!onDismiss) {
+      handleCancel();
+      return;
+    }
+    setInternalOpen(false);
+    onDismiss();
+  };
+
   return (
     <>
       {trigger && (
@@ -88,10 +110,11 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
         visible={isVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={handleCancel}
+        onRequestClose={handleDismiss}
       >
         <View style={globalStyles.modalOverlay}>
           <View style={globalStyles.modalContent}>
+            {header}
             {title && (
               <Text
                 {...testProps(`text_title_${qaId}`)}
@@ -106,6 +129,7 @@ const ConfirmationDialog: React.FC<ConfirmationDialogProps> = ({
             >
               {description}
             </Text>
+            {children}
 
             <View style={globalStyles.modalActions}>
               <Button

@@ -5,6 +5,87 @@ All notable changes to the ESP RainMaker Home app will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.0]
+
+### Added
+
+- **Runtime style engine for home customisation**
+  - Load deployment-specific brand configurations at app launch and resolve them into runtime theme tokens
+  - Show a deployment-trust dialog before accepting configurations from new brand sources
+  - Cache trusted brand configurations locally for subsequent launches
+  - Apply style updates in-place using a banner, with a native app restart as a fallback
+
+### Enhanced
+
+- **Provisioning**
+  - Keep the device awake during provisioning on Android and iOS to prevent long-running operations from timing out
+
+## [6.5.0]
+
+### Added
+
+- **[RMNeo] Matter support**
+  - Add a Matter device to a Neo home with its QR code or manual pairing code, on Android and iOS
+  - Control Matter only devices from the app; the app reports their state to the cloud so every phone in the home sees the same values
+  - The name typed during setup is applied to the device
+  - Hue and saturation control for Matter only lights
+
+### Changed
+
+- **Local control discovery**
+  - Read the node id from the mDNS TXT record, falling back to the first label of the host name
+
+- Update `@espressif/rainmaker-neo-base-sdk` to 1.2.2 and `@espressif/rainmaker-matter-sdk` to 3.2.0
+- Add `@espressif/rainmaker-neo-matter-sdk` 1.0.1
+
+### Fixed
+
+- **Matter**
+  - A Matter light just added shows its real on/off state instead of off
+  - On iOS, a second Matter device can be added in the same session; the previous commissioning session is released first
+  - Hybrid Matter nodes keep their Matter node id across refreshes
+
+- **Live updates**
+  - Classic live updates keep working when the account has Matter devices without a RainMaker config
+  - Devices of a home loaded after login are subscribed to live updates
+
+- **ESP RainMaker Neo**
+  - On iOS, adding a device that is already on the home network no longer fails at the challenge step
+  - Stopping local control discovery stops only its own searches, so Matter discovery keeps running
+  - Accepting a shared home shows the confirmation right away; the new home's devices still get live updates
+  - A Matter only device keeps the name given during setup even if the cloud connection reconnects at that moment
+  - On Android, leaving Wi-Fi drops local control for every device at once so control moves to the cloud, and devices are found on the home network again when Wi-Fi returns
+
+## [6.4.0]
+
+### Added
+
+- **Native Sign in with Apple**
+  - Sign in with Apple uses the system account sheet instead of a browser tab
+  - Falls back to the hosted OAuth flow automatically on Android, or when a deployment opts out via `ENABLE_NATIVE_APPLE_SIGN_IN`
+
+### Changed
+
+- **Home data cache and disk snapshot**
+  - Fetch nodes once per home instead of once per room; skip the separate custom-data fetch on login
+  - Skip settings writes (timezone, selected home, push token) when the value is unchanged
+  - Serve home, rooms and devices from the in-memory store after the first sync
+  - Restore the home tree from disk on launch so Home paints before the first network reply
+  - Login loads only the selected home; other homes load on first open and refresh in the background
+  - Update devices and rooms in place during sync instead of replacing lists
+
+- **RainMaker Neo**
+  - Look up a device's home from the cached store instead of an extra groups request
+
+- Update `@espressif/rainmaker-base-cdf` to 2.4.0
+
+### Fixed
+
+- **RainMaker Neo MQTT connection and credential refresh**
+  - Brand-new accounts come online: the first-login `409 User has no groups` is treated as expected and MQTT connects once the default home exists, instead of retrying with backoff
+  - MQTT credentials are re-vended after accepting a shared home or creating a home, so devices in a home gained mid-session subscribe without restarting the app
+  - A failed reconnect no longer fails the share accept or home creation; the watchdog and resume paths retry later
+
 ## [6.3.2]
 
 ### Fixed

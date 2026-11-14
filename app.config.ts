@@ -140,6 +140,11 @@ function buildRegionConfig(env: Record<string, string>) {
       enableOta: flag(env.ENABLE_OTA),
       enableAiAgent: flag(env.ENABLE_AI_AGENT),
       enableThirdPartyAuth: flag(env.ENABLE_THIRD_PARTY_AUTH),
+      // Defaults ON when the key is absent (same disable-only `flag()` semantics
+      // as the keys around it), so a region opts OUT by setting it to "false" —
+      // which .env.cn.example does, because the CN cloud serves no
+      // /auth/federated path. See .env.global.example.
+      enableNativeAppleSignIn: flag(env.ENABLE_NATIVE_APPLE_SIGN_IN),
       enableVoiceAssistants: flag(env.ENABLE_VOICE_ASSISTANTS),
       enableControlGroups: flag(env.ENABLE_CONTROL_GROUPS),
       enableOnNetworkProvisioning: flag(env.ENABLE_ON_NETWORK_PROVISIONING),
@@ -355,6 +360,9 @@ export default {
       },
       // Scan configuration (binary-level app capability)
       enableScanConfiguration: process.env.ENABLE_SCAN_CONFIGURATION !== 'false',
+      // brand.json path, relative to a scanned deployment's client-outputs URL.
+      // Unset or blank falls back to `brand/brand.json`.
+      brandJsonPath: process.env.BRAND_JSON_PATH?.trim() || undefined,
       // Deployment region selector (global | cn | auto). `auto` lets the
       // single iOS binary resolve by device Region; Android flavors force one.
       appRegion: process.env.APP_REGION || 'auto',

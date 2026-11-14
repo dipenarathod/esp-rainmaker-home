@@ -12,7 +12,6 @@ import {
   DEVICE_REACHABILITY_SOURCE_CONTROLLER,
   DEVICE_REACHABILITY_SOURCE_LOCAL,
   DEVICE_REACHABILITY_SOURCE_NONE,
-  ESPRM_NAME_PARAM_TYPE,
   MATTER_CONTROLLER_TRANSPORT_KEY,
   MATTER_LOCAL_TRANSPORT_KEY,
 } from "./constants";
@@ -25,13 +24,13 @@ import {
   isAIAgentFromAdvertisement,
   parseBleManufacturerAdvertisement,
 } from "./bleAdvertisement";
+import { resolveDeviceIcon } from "@shared/runtimeStyle/assets";
 import { mqttTransportUiState } from "@shared/state/mqttTransportUiState";
 import { DEVICE_TYPE_LIST } from "@/config/devices.config";
 import { getFeatures, type FeatureKey } from "@config/features.config";
 import {
   ESPCDF,
   ESPCDFDevice,
-  ESPCDFDeviceParam,
   ESPCDFNode,
   ESPCDFNodeTransport,
   ESPCDFTransportConfig,
@@ -60,8 +59,8 @@ export type { BleAdvertisedDeviceKind, ParsedBleManufacturerAdvertisement } from
 
 /**
  * Device images
- */ 
-const deviceImages: Record<string, any> = {
+ */
+const bundledDeviceImages: Record<string, any> = {
   "light-1": require("@assets/images/devices/light-1.png"),
   "light-1-online": require("@assets/images/devices/light-1-online.png"),
   "light-3": require("@assets/images/devices/light-3.png"),
@@ -93,6 +92,16 @@ const deviceImages: Record<string, any> = {
   "matter-controller": require("@assets/images/devices/matter-controller.png"),
   "matter-controller-online": require("@assets/images/devices/matter-controller-online.png"),
 };
+
+// Returns the style's icon for a key when it has one, even for keys with no bundled image.
+const deviceImages: Record<string, any> = new Proxy(bundledDeviceImages, {
+  get(target, key) {
+    if (typeof key !== "string") {
+      return Reflect.get(target, key);
+    }
+    return resolveDeviceIcon(key, target[key]);
+  },
+});
 
 /**
  * Extracts the node type from a node
@@ -221,49 +230,6 @@ const getDeviceImage = (type: string | undefined, isConnected: boolean) => {
     console.error("Error getting device image:", error);
     return getDefaultImage();
   }
-};
-
-/**
- * Gets the best display name for a device
- * @param node The ESPRMNode object
- * @returns A human-readable name for the device
- */
-const getDeviceName = (node: ESPCDFNode): string => {
-  const device = node.devices?.[0]
-  const nameParam: ESPCDFDeviceParam | null =
-    device?.params?.find((param) => param.type === ESPRM_NAME_PARAM_TYPE) ||
-    null;
-  if (nameParam) {
-    return nameParam.value;
-  } else {
-    // Fallback to device config name based on device type
-    const deviceType = extractDeviceType(device?.type);
-    const deviceConfig = findDeviceConfig(deviceType);
-    return deviceConfig?.name || "Light";
-  }
-};
-
-/**
- * Resolves the string to show when editing a sub-device name: name param, then display name,
- * internal device name, then parent node label.
- * @param device - Sub-device on the node
- * @param node - Parent CDF node
- * @returns Initial value for a device name field
- */
-const getSubDeviceInitialDisplayName = (
-  device: ESPCDFDevice,
-  node: ESPCDFNode
-): string => {
-  const nameParam = device.params?.find(
-    (param) => param.type === ESPRM_NAME_PARAM_TYPE
-  );
-  return (
-    (nameParam?.value as string) ||
-    device.displayName ||
-    device.name ||
-    node.nodeConfig?.info?.name ||
-    ""
-  );
 };
 
 /**
@@ -554,7 +520,8 @@ function resolveLanReachabilitySource(
 /**
  * Whether the device is reachable for control UI and which path is active.
  * Prefer `registeredTransports` from `subscriptionStore` so MobX tracks discovery add/remove.
- * LAN (`local` / `bridge`) takes precedence over cloud when active (badge semantics).
+ * LAN (`local` / `bridge`) is checked first and wins over cloud; the app-MQTT-down
+ * gate below only applies to the cloud path.
  * @param cdfNode - Node used for cloud `connectivityStatus` (live nodeStore entry when available).
  * @param registeredTransports - Optional subscription-store transports for this node id.
  * @param parentRegisteredTransports - Optional parent transports for bridged Matter children.
@@ -565,18 +532,6 @@ const getDeviceReachability = (
   registeredTransports?: NodeRegisteredTransports | null,
   parentRegisteredTransports?: NodeRegisteredTransports | null,
 ): DeviceReachability => {
-  // Cloud-online nodes look reachable via connectivityStatus even when the
-  // app MQTT session is down; force unreachable until transport recovers.
-  if (
-    !mqttTransportUiState.connected &&
-    (cdfNode.connectivityStatus?.isConnected ?? false)
-  ) {
-    return {
-      reachable: false,
-      source: DEVICE_REACHABILITY_SOURCE_NONE,
-    };
-  }
-
   const transportSource = resolveNodeTransportsForReachability(
     cdfNode,
     registeredTransports,
@@ -587,10 +542,23 @@ const getDeviceReachability = (
     parentRegisteredTransports,
   );
 
+  // LAN control does not need the app MQTT session, so check it first.
   if (lanSource) {
     return {
       reachable: true,
       source: lanSource,
+    };
+  }
+
+  // Cloud path only: while the app MQTT session is down, a cloud-online node
+  // cannot actually be controlled, so report it unreachable.
+  if (
+    !mqttTransportUiState.connected &&
+    (cdfNode.connectivityStatus?.isConnected ?? false)
+  ) {
+    return {
+      reachable: false,
+      source: DEVICE_REACHABILITY_SOURCE_NONE,
     };
   }
   const viaCloud = cdfNode.connectivityStatus?.isConnected || false;
@@ -633,6 +601,32 @@ const isDeviceConnected = (
   ).reachable;
 };
 
+/**
+ * Whether any control path to a node is currently up.
+ *
+ * Cloud connectivity alone is not enough to answer this: a node that never joins
+ * the cloud reports `isConnected: false` forever, yet is fully controllable over
+ * the LAN. Callers get one boolean and do not need to know which path served it.
+ *
+ * Deliberately distinct from {@link isDeviceConnected}, which additionally forces
+ * unreachable while the app MQTT session is down — that is the right rule for the
+ * control UI, but it would disable settings on a node that needs no MQTT at all.
+ * @param node - CDF node being inspected
+ * @param registeredTransports - Subscription-store transports for that node id
+ * @returns True when the node can be reached over cloud or LAN
+ */
+const hasActiveControlPath = (
+  node: ESPCDFNode | undefined,
+  registeredTransports: NodeRegisteredTransports | null | undefined,
+): boolean => {
+  if (node?.connectivityStatus?.isConnected) {
+    return true;
+  }
+  return isOperationalMatterLocalTransport(
+    registeredTransports?.[MATTER_LOCAL_TRANSPORT_KEY],
+  );
+};
+
 // Export constants and utility functions
 export { DEVICE_TYPE_LIST, deviceImages };
 
@@ -644,8 +638,6 @@ export {
   resolveDeviceCardRoutePath,
   getIconName,
   getDeviceImage,
-  getDeviceName,
-  getSubDeviceInitialDisplayName,
   getDeviceCategory,
   isDeviceCategory,
   transformNodesToDevices,
@@ -657,4 +649,5 @@ export {
   parseBleManufacturerAdvertisement,
   getDeviceReachability,
   isDeviceConnected,
+  hasActiveControlPath,
 };

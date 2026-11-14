@@ -8,11 +8,14 @@ import Joi from "joi";
 import type { ScannedConfigPayload } from "@config/runtime.config";
 import {
   ESPRMNeo_BASE_SDK_ID,
+  isRmneoStackSdkId,
   normalizeSdkIdentifier,
   SUPPORTED_SDK_IDENTIFIERS,
 } from "@config/sdk.config";
+import { ESPRMNeoMatter_BASE_SDK_ID } from "@config/sdk.identifiers";
 import { CONFIG_FETCH_TIMEOUT_MS } from "@shared/utils/constants";
 import {
+  CLIENT_OUTPUTS_BRAND_PATH,
   CONFIG_SCAN_INVALID_PAYLOAD_ERROR,
   CONFIG_SCAN_URL_SCHEME_HTTP,
   CONFIG_SCAN_URL_SCHEME_HTTPS,
@@ -51,8 +54,11 @@ const CONFIG_SCHEMA = Joi.object({
   sdk: Joi.string()
     .valid(...SUPPORTED_SDK_IDENTIFIERS)
     .required(),
+  // Both RMNeo ids carry the same deployment config shape; they differ only in
+  // whether the adaptor exposes the Matter fabric verbs. Matching the base id
+  // alone would send a Matter-capable RMNeo payload to the RainMaker schema.
   config: Joi.when("sdk", {
-    is: ESPRMNeo_BASE_SDK_ID,
+    is: Joi.any().valid(ESPRMNeo_BASE_SDK_ID, ESPRMNeoMatter_BASE_SDK_ID).required(),
     then: ESPRMNEO_BASE_CONFIG_SCHEMA,
     otherwise: ESPRM_BASE_CONFIG_SCHEMA,
   }),
@@ -141,12 +147,21 @@ function preprocessScannedPayload(
   payload: ScannedConfigPayload
 ): ScannedConfigPayload {
   const rawSdk = String(payload.sdk ?? "");
-  const sdk = normalizeSdkIdentifier(rawSdk) ?? rawSdk;
+  // A payload naming the plain RMNeo base is upgraded to the Matter adaptor: it
+  // is a strict superset (same stack plus the fabric verbs), and the base id
+  // resolves `matterCommissioning: false`, which silently disables commissioning
+  // for every privately scanned deployment. Built-in Neo already resolves the
+  // Matter id in `resolveBuiltInSelection`; this keeps scanned ones consistent.
+  const canonical = normalizeSdkIdentifier(rawSdk) ?? rawSdk;
+  const sdk =
+    canonical === ESPRMNeo_BASE_SDK_ID ? ESPRMNeoMatter_BASE_SDK_ID : canonical;
   const withCanonicalSdk =
     sdk !== rawSdk ? { ...payload, sdk } : payload;
 
+  // `matterCapable=false` here means the scanned deployment cannot commission at
+  // all, so this aborts before any commissioning work starts.
   if (
-    sdk !== ESPRMNeo_BASE_SDK_ID ||
+    !isRmneoStackSdkId(sdk) ||
     !withCanonicalSdk.config ||
     typeof withCanonicalSdk.config !== "object"
   ) {
@@ -154,7 +169,8 @@ function preprocessScannedPayload(
   }
   return {
     ...withCanonicalSdk,
-    sdk: ESPRMNeo_BASE_SDK_ID,
+    // Narrowed to an RMNeo id by the guard above; restates it for the type.
+    sdk,
     config: normalizeScannedNeoConfig(
       withCanonicalSdk.config as unknown as Record<string, unknown>
     ) as ScannedConfigPayload["config"],
@@ -216,11 +232,16 @@ async function fetchJsonFromUrl(url: string): Promise<unknown> {
 
 /**
  * Validates config payload. Returns validated payload or throws with message.
+ * Validation strips any `config.brandUrl` in the payload; it is set from `outputsUrl`
+ * only when that URL is https, e.g.
+ * `https://host/eu-west-1/rmng-client-outputs.json` -> `https://host/eu-west-1/brand/brand.json`.
  * @param payload - Candidate scanned config
+ * @param outputsUrl - URL the client outputs were fetched from, when the payload came from one
  * @returns Validated {@link ScannedConfigPayload}
  */
 export function validateConfig(
-  payload: ScannedConfigPayload
+  payload: ScannedConfigPayload,
+  outputsUrl?: string
 ): ScannedConfigPayload {
   const prepared = preprocessScannedPayload(payload);
   const { error, value } = CONFIG_SCHEMA.validate(prepared, {
@@ -233,7 +254,17 @@ export function validateConfig(
     throw new Error(`Invalid config format: ${messages}`);
   }
 
-  return value as ScannedConfigPayload;
+  const validated = value as ScannedConfigPayload;
+  if (!outputsUrl?.startsWith(CONFIG_SCAN_URL_SCHEME_HTTPS)) {
+    return validated;
+  }
+  return {
+    ...validated,
+    config: {
+      ...validated.config,
+      brandUrl: new URL(CLIENT_OUTPUTS_BRAND_PATH, outputsUrl).href,
+    },
+  };
 }
 
 /**
@@ -275,7 +306,7 @@ export async function resolveConfigFromScan(
   const fetched = await fetchJsonFromUrl(trimmed);
   const fromFetchedOutputs = tryMapClientOutputsDoc(fetched);
   if (fromFetchedOutputs) {
-    return validateConfig(fromFetchedOutputs);
+    return validateConfig(fromFetchedOutputs, trimmed);
   }
 
   return validateConfig(fetched as ScannedConfigPayload);

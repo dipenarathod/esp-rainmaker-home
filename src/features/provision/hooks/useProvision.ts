@@ -11,6 +11,7 @@ import { usePreventRemove } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCDF } from "@shared/hooks/useCDF";
+import type { SyncHomeWithNodes } from "@context/store.context";
 import { startNodeLocalDiscovery } from "@features/group/utils/localDiscovery";
 import { startMatterLocalDiscovery } from "@features/matter/utils/matterLocalDiscovery";
 import { useToast } from "@shared/hooks/useToast";
@@ -50,7 +51,7 @@ import {
   finalizeProvisionedNode,
 } from "@shared/utils/provisionNode";
 import { persistWifiCredential } from "./useWifiStorage";
-import { isRmneoStackSdkId } from "@config/sdk.identifiers";
+import { getFeatures } from "@config/features.config";
 
 /**
  * Batches related state updates. react-native-web does not export
@@ -106,11 +107,11 @@ type PendingExit =
 /** Same as Home pull-to-refresh: fresh node list + connectivity from cloud, then local discovery. */
 async function syncHomeAfterProvision(
   store: ESPCDF | undefined,
-  syncHomeWithNodes: (shouldFetchFirstPage?: boolean) => Promise<void>,
+  syncHomeWithNodes: SyncHomeWithNodes,
 ): Promise<void> {
   if (!store) return;
   try {
-    await syncHomeWithNodes();
+    await syncHomeWithNodes({ force: true });
     // CDF's mergeLocalTransportFromNodeMap preserves matter_local across the
     // cloud refresh, so the just-commissioned device card stays "available on
     // WLAN" the moment local discovery resolves it — no extra reapply needed.
@@ -781,11 +782,11 @@ export const useProvision = (): UseProvisionReturn => {
         );
 
         const retriedNodeId = retriedNodeIdRef.current;
-        // Neo's timezone write needs its MQTT transport attached first.
-        const isNeoStack = isRmneoStackSdkId(store?.getActiveAdaptorIdentifier());
+        // A live-verified timezone write needs its MQTT transport attached first.
+        const { timezoneLiveVerify } = getFeatures();
         const node =
           user && retriedNodeId
-            ? await finalizeProvisionedNode(user, retriedNodeId, isNeoStack)
+            ? await finalizeProvisionedNode(user, retriedNodeId, timezoneLiveVerify)
             : null;
         if (!node) {
           throw new Error(t("device.errors.nodeNotFound"));
@@ -804,7 +805,6 @@ export const useProvision = (): UseProvisionReturn => {
       t,
       ssid,
       user,
-      store,
       handleProvisionUpdate,
       handleProvisionError,
       handleAddDeviceSuccess,

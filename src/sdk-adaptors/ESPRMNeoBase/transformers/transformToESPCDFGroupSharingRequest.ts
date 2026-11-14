@@ -11,7 +11,12 @@ import {
   ESPCDFGroupSharingRequestOperation,
   ESPCDFGroupSharingStatus,
 } from "@store";
-import type { ESPRMNeoSharingRequest } from "@espressif/rainmaker-neo-base-sdk";
+import type {
+  ESPRMNeoSharingRequest,
+  ESPRMNeoUser,
+} from "@espressif/rainmaker-neo-base-sdk";
+import { refreshRmneoMqttCredentials } from "../utils/helpers/mqttConnectionHelpers";
+import { trackMqttCredentialRefresh } from "../utils/helpers/mqttCredentialRefresh";
 import {
   getPrimaryUsernameFromSharingRequest,
   normalizeRmneoProcessSharingResponse,
@@ -30,10 +35,12 @@ import {
  * When `subgroupId` is set, that id is used as the effective group target
  * (room-scoped share); otherwise `groupId` (home) is used.
  * @param rmRequest - Raw RMNeo sharing request from the SDK.
+ * @param esprmngUser - RMNeo user; its MQTT session is re-vended after accept.
  * @returns CDF group sharing request with accept / decline / remove operations.
  */
 export function transformToESPCDFGroupSharingRequest(
   rmRequest: ESPRMNeoSharingRequest,
+  esprmngUser: ESPRMNeoUser,
 ): ESPCDFGroupSharingRequest {
   const effectiveGroupId = rmRequest.subgroupId?.trim()
     ? rmRequest.subgroupId
@@ -46,6 +53,14 @@ export function transformToESPCDFGroupSharingRequest(
      */
     async accept(): Promise<ESPCDFAPIResponse> {
       const result = await rmRequest.accept();
+      // New membership needs new MQTT credentials. Node subscribes wait for
+      // them; the caller's home sync re-subscribes, so the reconnect does not.
+      trackMqttCredentialRefresh(
+        refreshRmneoMqttCredentials(esprmngUser, "share.accept", {
+          resubscribe: false,
+        }),
+        "share.accept",
+      );
       return normalizeRmneoProcessSharingResponse(result);
     },
 

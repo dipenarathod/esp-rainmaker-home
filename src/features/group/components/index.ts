@@ -21,12 +21,20 @@ export {
   HomeEmptyState,
   type HomeEmptyStateProps,
 } from "./Home/HomeEmptyState";
+export {
+  HomeLoadFailedNotice,
+  type HomeLoadFailedNoticeProps,
+} from "./Home/HomeLoadFailedNotice";
 export { default as DeviceTypeFilterTabs } from "./Home/DeviceTypeFilterTabs";
 export { default as RoomControlSwitch } from "./Home/RoomControlSwitch";
 export {
   MigrationPromptModal,
   type MigrationPromptModalProps,
 } from "./Home/MigrationPromptModal";
+export {
+  StyleUpdateBanner,
+  type StyleUpdateBannerProps,
+} from "./Home/StyleUpdateBanner";
 export {
   HomeDeviceSkeletonList,
 } from "./Home/HomeLoadingSkeleton";

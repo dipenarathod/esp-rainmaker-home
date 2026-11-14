@@ -23,7 +23,7 @@ import { useCDF } from "@shared/hooks/useCDF";
 import { useDeviceConnected } from "@shared/hooks/useDeviceConnected";
 import { useToast } from "@shared/hooks/useToast";
 import { extractErrorMessage } from "@shared/utils/common";
-import { getSubDeviceInitialDisplayName } from "@shared/utils/device";
+import { getDeviceDisplayName } from "@shared/utils/deviceDisplayName";
 import { testProps } from "@shared/utils/testProps";
 import { useControl } from "@features/control/hooks";
 import EffectsEditor from "@features/control/components/EffectsEditor";
@@ -105,7 +105,7 @@ const MemberRow = observer(
   ({ member, inGroup, busy, onAdd, onRemove }: MemberRowProps) => {
     const connected = useDeviceConnected(member.node);
     const name =
-      getSubDeviceInitialDisplayName(member.device, member.node) ||
+      getDeviceDisplayName(member.device, member.node) ||
       member.device.name;
     const status = !connected
       ? "Offline"

@@ -1,8 +1,8 @@
 {
   "name": "NOVA",
   "main": "expo-router/entry",
-  "version": "6.3.2",
-  "versionCode": 58,
+  "version": "6.6.0",
+  "versionCode": 61,
   "workspaces": [
     "modules/*"
   ],
@@ -57,10 +57,11 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@espressif/rainmaker-base-cdf": "2.3.0",
+    "@espressif/rainmaker-base-cdf": "2.4.0",
     "@espressif/rainmaker-base-sdk": "3.5.1",
-    "@espressif/rainmaker-matter-sdk": "3.1.0",
-    "@espressif/rainmaker-neo-base-sdk": "1.2.1",
+    "@espressif/rainmaker-matter-sdk": "3.2.0",
+    "@espressif/rainmaker-neo-base-sdk": "1.2.2",
+    "@espressif/rainmaker-neo-matter-sdk": "1.0.1",
     "@expo/vector-icons": "^14.0.2",
     "@modules/ble-prov": "*",
     "@modules/kvs": "*",
@@ -95,6 +96,7 @@
     "expo-font": "~55.0.6",
     "expo-haptics": "~55.0.14",
     "expo-image-picker": "~55.0.20",
+    "expo-keep-awake": "~55.0.8",
     "expo-linear-gradient": "~55.0.13",
     "expo-linking": "~55.0.14",
     "expo-localization": "~55.0.16",
@@ -172,5 +174,12 @@
   "resolutions": {
     "axios": "1.10.0"
   },
-  "private": true
+  "private": true,
+  "jest": {
+    "preset": "jest-expo",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/test/"
+    ]
+  }
 }

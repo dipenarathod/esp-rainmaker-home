@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect, useContext } from "react";
 import type { ESPCDFGroup } from "@store";
 import { useCDF } from "@shared/hooks/useCDF";
 import { useHomeViewModel, type UseHomeViewModelResult } from "./useHomeViewModel";
@@ -21,12 +21,20 @@ import {
 } from "@features/provision/constants";
 import { startNodeLocalDiscovery } from "@features/group/utils/localDiscovery";
 import { startMatterLocalDiscovery } from "@features/matter/utils/matterLocalDiscovery";
+import { loadHomeNodes } from "@features/group/utils/homeNodes";
 import type { RoomTab } from "@src/types/global";
 import { getFeatures } from "@/config/features.config";
+import { runtimeConfigManager } from "@config/runtime.config";
+import { AppRestartContext } from "@context/appRestart.context";
+import { syncSaved } from "@shared/runtimeStyle/store";
 import { DEFAULT_HOME_GROUP_NAME } from "@shared/utils/constants";
+import { retryHomeLoadUntilItWorks } from "@features/group/utils/retryHomeLoad";
+import { onHomeSyncSucceeded } from "@shared/utils/homeSyncTracker";
 
 export interface UseHomeScreenResult {
   isLoading: boolean;
+  /** True while the last home load failed (e.g. offline); it is retried by itself. */
+  homeLoadFailed: boolean;
   /** True while a push to Scan QR / add-device is in flight (Home only). */
   isNavigatingToAddDevice: boolean;
   refreshing: boolean;
@@ -50,6 +58,14 @@ export interface UseHomeScreenResult {
   redirectOperations: (type: string) => void;
   showMigrationPrompt: boolean;
   handleMigrationPromptUnderstood: () => Promise<void>;
+  /** True once a pull-to-refresh saves a style that differs from the one on screen. */
+  styleUpdateAvailable: boolean;
+  /** Whether the dialog offering to apply the saved style is open. */
+  showStyleUpdateDialog: boolean;
+  /** Closes the dialog and reloads the JS runtime to apply the saved style. */
+  applyStyleUpdate: () => void;
+  /** Closes the dialog without applying the style. */
+  dismissStyleUpdateDialog: () => void;
 }
 
 /**
@@ -62,6 +78,7 @@ export function useHomeScreen(): UseHomeScreenResult {
   const unifiedUser = unifiedUserStore?.user;
   const toast = useToast();
   const router = useRouter();
+  const { restartApp } = useContext(AppRestartContext);
   const goToAddDevice = useAddDeviceNavigation();
   const defaultTabs = useMemo(() => getDefaultHomeTabs(t), [t]);
   const hasInitialized = useRef(false);
@@ -73,8 +90,14 @@ export function useHomeScreen(): UseHomeScreenResult {
   const addDeviceNavFrameRef = useRef<number | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [homeLoadFailed, setHomeLoadFailed] = useState(false);
+  // The store's sync function changes every render; the retry reads the latest.
+  const syncHomeWithNodesRef = useRef(syncHomeWithNodes);
+  syncHomeWithNodesRef.current = syncHomeWithNodes;
   const [isNavigatingToAddDevice, setIsNavigatingToAddDevice] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [styleUpdateAvailable, setStyleUpdateAvailable] = useState(false);
+  const [showStyleUpdateDialog, setShowStyleUpdateDialog] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<RoomTab>(
     defaultTabs[0] ?? { label: "", id: ALL_DEVICES_TAB_ID }
   );
@@ -85,7 +108,7 @@ export function useHomeScreen(): UseHomeScreenResult {
   const selectedHome = store.getCurrentHome() ?? null;
   const activeHomeNodes = store.getNodesForCurrentHome();
 
-  const { roomTabs, roomDevices, rooms, groupControlGroups: raw } =
+  const { roomTabs, roomDevices, rooms, groupControlGroups: raw, activeRoom } =
     useHomeViewModel({
       selectedHome,
       selectedRoom,
@@ -100,14 +123,14 @@ export function useHomeScreen(): UseHomeScreenResult {
 
   useEffect(() => {
     setSelectedDeviceTypeFilter(FILTER_ALL);
-  }, [selectedRoom.id]);
+  }, [activeRoom.id]);
 
   const selectedRoomGroup = useMemo(
     () =>
-      selectedRoom.id !== ALL_DEVICES_TAB_ID
-        ? rooms.find((r) => r.id === selectedRoom.id)
+      activeRoom.id !== ALL_DEVICES_TAB_ID
+        ? rooms.find((r) => r.id === activeRoom.id)
         : undefined,
-    [selectedRoom.id, rooms]
+    [activeRoom.id, rooms]
   );
 
   const filteredRoomDevices = useMemo(() => {
@@ -143,9 +166,10 @@ export function useHomeScreen(): UseHomeScreenResult {
 
       startNodeLocalDiscovery(store);
       startMatterLocalDiscovery(store);
-      void syncHomeWithNodes(true)
+      void syncHomeWithNodes()
         .catch((error: unknown) => {
           console.error("Failed to initialize home:", error);
+          setHomeLoadFailed(true);
           toast.showError(
             t("group.errors.failedToInitializeHome"),
             t("layout.shared.manualRefreshHelperText")
@@ -185,6 +209,7 @@ export function useHomeScreen(): UseHomeScreenResult {
     try {
       if (homes.length > 0) {
         await unifiedUser?.setCurrentHome?.(homes[0]);
+        await loadHomeNodes(homes[0], store);
         return;
       }
 
@@ -197,7 +222,7 @@ export function useHomeScreen(): UseHomeScreenResult {
         return;
       }
 
-      await syncHomeWithNodes(true);
+      await syncHomeWithNodes();
     } catch (error: unknown) {
       console.error("Failed to recover stale home selection:", error);
     }
@@ -228,31 +253,90 @@ export function useHomeScreen(): UseHomeScreenResult {
     }
   }, [isStoreInitialized]);
 
+  // Any home sync that works clears the failed state, whoever started it
+  // (first load, pull-to-refresh, home switch, another screen, the retry).
+  useEffect(() => onHomeSyncSucceeded(() => setHomeLoadFailed(false)), []);
+
+  // A failed home load is retried by itself: at once when the internet comes
+  // back, otherwise after growing waits. Stops when it works or Home closes.
+  useEffect(() => {
+    if (!homeLoadFailed) return;
+    return retryHomeLoadUntilItWorks(
+      () => syncHomeWithNodesRef.current({ force: true }),
+      () => setHomeLoadFailed(false),
+    );
+  }, [homeLoadFailed]);
+
+  // Matter discovery started while the home could not load had no home to
+  // look in (e.g. app started offline), so start it again once it loads.
+  // Node discovery needs no home and adds a listener per start, so not here.
+  const homeLoadHadFailed = useRef(false);
+  useEffect(() => {
+    if (homeLoadFailed) {
+      homeLoadHadFailed.current = true;
+      return;
+    }
+    if (homeLoadHadFailed.current) {
+      homeLoadHadFailed.current = false;
+      startMatterLocalDiscovery(store);
+    }
+  }, [homeLoadFailed, store]);
+
+  /**
+   * Handles pull-to-refresh: resyncs home nodes, restarts local discovery and
+   * syncs the saved style. Opens the style update dialog when the style changed.
+   */
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      const syncPromise = syncHomeWithNodes(true);
+      const syncPromise = syncHomeWithNodes({ force: true });
       startNodeLocalDiscovery(store);
       startMatterLocalDiscovery(store);
-      await syncPromise;
+
+      const brandUrl = runtimeConfigManager.config?.brandUrl;
+      const stylePromise = brandUrl
+        ? syncSaved(brandUrl).catch((error: unknown) => {
+            console.warn("[Home] Style sync on refresh failed:", error);
+            return false;
+          })
+        : Promise.resolve(false);
+
+      const [, styleChanged] = await Promise.all([syncPromise, stylePromise]);
+      if (styleChanged) {
+        setStyleUpdateAvailable(true);
+        setShowStyleUpdateDialog(true);
+      }
     } catch (error) {
       console.error("Error refreshing home:", error);
+      setHomeLoadFailed(true);
     } finally {
       setRefreshing(false);
     }
   }, [syncHomeWithNodes, store]);
 
+  /** Closes the dialog and reloads the JS runtime to apply the saved style. */
+  const applyStyleUpdate = useCallback(() => {
+    setShowStyleUpdateDialog(false);
+    restartApp();
+  }, [restartApp]);
+
+  /** Closes the dialog; `styleUpdateAvailable` stays true. */
+  const dismissStyleUpdateDialog = useCallback(() => {
+    setShowStyleUpdateDialog(false);
+  }, []);
+
   const handleHomeSelect = useCallback(
     async (home: ESPCDFGroup) => {
       if (home?.id) {
         await unifiedUser?.setCurrentHome?.(home);
-        await syncHomeWithNodes(true);
+        // One node_details call for this home; cached nodes show at once.
+        await loadHomeNodes(home, store);
         startNodeLocalDiscovery(store);
         startMatterLocalDiscovery(store);
         setTooltipVisible(false);
       }
     },
-    [unifiedUser, syncHomeWithNodes, store]
+    [unifiedUser, store]
   );
 
   const handleDropdownPress = useCallback(
@@ -328,9 +412,10 @@ export function useHomeScreen(): UseHomeScreenResult {
 
   return {
     isLoading,
+    homeLoadFailed,
     isNavigatingToAddDevice,
     refreshing,
-    selectedRoom,
+    selectedRoom: activeRoom,
     setSelectedRoom,
     roomTabs,
     roomDevices,
@@ -350,5 +435,9 @@ export function useHomeScreen(): UseHomeScreenResult {
     redirectOperations,
     showMigrationPrompt,
     handleMigrationPromptUnderstood,
+    styleUpdateAvailable,
+    showStyleUpdateDialog,
+    applyStyleUpdate,
+    dismissStyleUpdateDialog,
   };
 }

@@ -17,7 +17,9 @@ import {
   type ESPCommissioningResponse,
 } from "@espressif/rainmaker-matter-sdk";
 import { transformToESPCDFGroup as transformToESPCDFGroupFromESPRMBase } from "@sdk-adaptors/ESPRMBase/transformers/transformToESPCDFGroup";
+import { normalizeMatterFabricDetails } from "@sdk-adaptors/shared/utils/matterFabricDetails";
 import { MATTER_NEEDS_FABRIC_CONVERSION } from "../constants";
+import { fetchMatterGroupNodes } from "../nodeFetch";
 
 /**
  * Maps SDK fabric details to the CDF {@link ESPCDFMatterFabricDetails} shape.
@@ -26,21 +28,11 @@ import { MATTER_NEEDS_FABRIC_CONVERSION } from "../constants";
  */
 export function normalizeMatterFabricDetailsFromSdk(
     matterFabric: ESPRMFabric,
-  ): ESPCDFMatterFabricDetails | undefined {
-    const result: Record<string, any> = {
-      rootCa: matterFabric.fabricDetails?.rootCa ?? (matterFabric.fabricDetails as any)?.root_ca,
-      matterUserId: matterFabric.fabricDetails?.matterUserId ?? (matterFabric.fabricDetails as any)?.matter_user_id,
-      ipk: matterFabric.fabricDetails?.ipk,
-      groupCatIdOperate: matterFabric.fabricDetails?.groupCatIdOperate ?? (matterFabric.fabricDetails as any)?.group_cat_id_operate,
-      groupCatIdAdmin: matterFabric.fabricDetails?.groupCatIdAdmin ?? (matterFabric.fabricDetails as any)?.group_cat_id_admin,
-      userCatId: matterFabric.fabricDetails?.userCatId ?? (matterFabric.fabricDetails as any)?.user_cat_id,
-    };
-  
-    const hasAny = Object.values(result).some(
-      (v) => v !== undefined && v !== null && String(v).length > 0
+): ESPCDFMatterFabricDetails | undefined {
+    return normalizeMatterFabricDetails(
+        matterFabric.fabricDetails as Record<string, unknown> | undefined,
     );
-    return hasAny ? (result as ESPCDFMatterFabricDetails) : undefined;
-  }
+}
 
 /**
  * Resolves an SDK {@link ESPRMFabric} instance for Matter-enabled groups.
@@ -113,6 +105,9 @@ export function transformToESPCDFGroup(
 
     baseGroup.operations = {
         ...baseGroup.operations,
+        // Node details through the Matter-aware fetch (fabric wrap, local Matter
+        // ids, controller transport), the same path the login sync uses.
+        getNodes: () => fetchMatterGroupNodes(baseGroup, user),
         ...matterFabricOperations,
     };
     baseGroup.identifier = identifier;

@@ -6,7 +6,7 @@
 
 import "../i18n";
 import { StyleSheet, View, useWindowDimensions } from "react-native";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useCDF } from "@shared/hooks/useCDF";
 import {
   useRouter,
@@ -15,18 +15,18 @@ import {
   Redirect,
 } from "expo-router";
 import { Logo } from "@shared/components";
-import { registerForNotification } from "@shared/utils/notifications";
+import { endUserSession } from "@shared/utils/userSession";
 import {
   executePostLoginPipeline,
   navigateToHomeAfterAuth,
 } from "@features/auth/utils/postLoginPipeline";
 import { isConsentAccepted } from "@features/consent";
-import { getFeatures } from "@config/features.config";
 import { isCnRegion } from "@config/region.config";
 import { getPreAuthRoute } from "@features/landing";
 import { shouldShowWebDesktopEmbedPhone } from "@features/embed/utils/shouldShowWebDesktopEmbedPhone";
 import { WEB_EMBED_ROUTE } from "@shared/utils/constants";
 import { tokens } from "@shared/theme/tokens";
+import { styleQuery } from "@shared/runtimeStyle/config";
 
 /**
  * Root splash / auth gate for web (no native Matter bootstrap import).
@@ -76,6 +76,7 @@ const Index = () => {
         router.replace(getPreAuthRoute() as never);
       }
     } catch {
+      await endUserSession();
       await user?.logout();
       router.replace(getPreAuthRoute() as never);
     }
@@ -91,33 +92,8 @@ const Index = () => {
     }, [store, isInitialized, useDesktopEmbedPhone]),
   );
 
-  useEffect(() => {
-    if (
-      useDesktopEmbedPhone ||
-      !user ||
-      !isInitialized ||
-      !getFeatures().notifications
-    ) {
-      return;
-    }
-    void initNotification();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional hook deps
-  }, [user, isInitialized, useDesktopEmbedPhone]);
-
-  /**
-   * Registers for push notifications when the feature is enabled.
-   */
-  const initNotification = async () => {
-    try {
-      await registerForNotification(store);
-    } catch (err) {
-      console.error(err);
-      console.error("Failed to initialize notification");
-    }
-  };
-
   if (useDesktopEmbedPhone) {
-    return <Redirect href={WEB_EMBED_ROUTE as never} />;
+    return <Redirect href={`${WEB_EMBED_ROUTE}${styleQuery}` as never} />;
   }
 
   return (

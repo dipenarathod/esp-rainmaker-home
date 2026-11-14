@@ -30,6 +30,8 @@ export interface UseSelectDeviceRoomReturn {
   isLoading: boolean;
   provisionedNode: ESPCDFNode | null;
   currentHomeId: string | null | undefined;
+  /** Where Back goes when no name step is under this screen; undefined for a plain back. */
+  backUrl: string | undefined;
 }
 
 /** Post-provision: pick a room, assign device, then Guide (if readme) or Home. */
@@ -37,14 +39,20 @@ export const useSelectDeviceRoom = (): UseSelectDeviceRoomReturn => {
   const router = useRouter();
   const toast = useToast();
   const { t } = useTranslation();
-  const { store, syncHomeWithNodes } = useCDF();
+  const { store } = useCDF();
   const params = useLocalSearchParams<{
     nodeId: string;
     /** Set when returning from Create Room (provision) so the new room appears selected */
     selectedRoomId?: string | string[];
+    /** "1" when no name step is under this screen (iOS Matter add), so Back goes Home. */
+    backToHome?: string | string[];
   }>();
   const nodeId = normalizeLocalParam(params.nodeId);
   const selectedRoomId = normalizeLocalParam(params.selectedRoomId);
+  // Read once: coming back from Create Room replaces the params.
+  const [backUrl] = useState<string | undefined>(() =>
+    normalizeLocalParam(params.backToHome) === "1" ? "/(group)/Home" : undefined,
+  );
 
   const [selectedRoom, setSelectedRoom] = useState<ESPCDFGroup | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -61,9 +69,14 @@ export const useSelectDeviceRoom = (): UseSelectDeviceRoomReturn => {
     [nodeId, store?.nodeStore?.nodesList]
   );
 
+  // Keyed on the subgroup array, not the home: CDF adds a created room by
+  // replacing `home.subGroups` on the same home object, so a memo keyed on
+  // `home` alone kept the pre-create (empty) list after Create Room.
+  const homeSubGroups = home?.subGroups;
   const rooms = useMemo(
     () => getSelectableRoomsForHome(home),
-    [home],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- homeSubGroups is read through `home`
+    [home, homeSubGroups],
   );
 
   /**
@@ -167,9 +180,8 @@ export const useSelectDeviceRoom = (): UseSelectDeviceRoomReturn => {
           return;
         }
 
-        await syncHomeWithNodes();
         // New Architecture (Fabric) commit-ordering guard.
-        // syncHomeWithNodes() triggers a MobX re-render of the Home screen, which
+        // addNodes() updates the store, which re-renders the Home screen that
         // is still mounted underneath this provision stack — it grows a new room
         // tab and a new device card. If we tear the stack down (dismissTo Home) in
         // the SAME commit as that re-render, Fabric receives an interleaved
@@ -194,7 +206,6 @@ export const useSelectDeviceRoom = (): UseSelectDeviceRoomReturn => {
     rooms,
     selectedRoom,
     router,
-    syncHomeWithNodes,
     t,
     toast,
   ]);
@@ -209,5 +220,6 @@ export const useSelectDeviceRoom = (): UseSelectDeviceRoomReturn => {
     isLoading,
     provisionedNode,
     currentHomeId,
+    backUrl,
   };
 };
