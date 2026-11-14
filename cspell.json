@@ -136,6 +136,7 @@
     "rmaker",
     "lightstrip",
     "ledstrip",
+    "pixelframe",
     "singleplug",
     "dualplug",
     "powerstrip",
@@ -180,7 +181,11 @@
     "firebase",
     "Firebase",
     "vapid",
-    "VAPID"
+    "VAPID",
+    "colour",
+    "VURING", 
+    "SOUNDFIRE",
+    "COLOUR"
   ],
   "flagWords": [],
   "ignoreRegExpList": [

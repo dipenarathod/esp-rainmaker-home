@@ -19,7 +19,7 @@ export interface WritableParam {
 }
 
 /**
- * Local draft of a structured (string-encoded) param for rapid edits.
+ * Local draft of a param for rapid edits (a slider drag, a colour pick).
  *
  * Edits update the draft immediately and are sent after a short pause: one
  * write per burst, latest value wins, one write in flight at a time. While
@@ -28,7 +28,8 @@ export interface WritableParam {
  * Anything pending is sent when the screen unmounts.
  * @param param - The device param to write (may be undefined while loading)
  * @param deviceValue - Parsed value currently reported by the device; keep it memoised
- * @param encode - Converts the value to the param's string format
+ * @param encode - Converts the value to what the device expects: the param's
+ *   string format for structured params, or a number for numeric params
  * @param connected - Whether the device is reachable
  * @param tag - Name used in error logs
  * @returns [draft value, edit function]
@@ -36,7 +37,7 @@ export interface WritableParam {
 export function useDraftParam<T>(
   param: WritableParam | undefined,
   deviceValue: T,
-  encode: (value: T) => string,
+  encode: (value: T) => string | number,
   connected: boolean,
   tag = "useDraftParam",
 ): [T, (next: T) => void] {
@@ -84,10 +85,10 @@ export function useDraftParam<T>(
     }
     pending.current = null;
     sending.current = true;
-    const str = encodeRef.current(next);
+    const out = encodeRef.current(next);
     try {
-      await p.setValue(str);
-      p.value = str;
+      await p.setValue(out);
+      p.value = out;
     } catch (e) {
       console.error(`[${tag}] send failed:`, e);
     } finally {

@@ -37,6 +37,7 @@ import SwitchControl from "./device_panels/Switch";
 import AiAgentControl from "./device_panels/AiAgent";
 import CameraControl from "./device_panels/Camera";
 import LedStripControl from "./device_panels/LedStrip";
+import PixelFrameControl from "./device_panels/PixelFrame";
 
 // Utils
 import { testProps } from "@shared/utils/testProps";
@@ -52,6 +53,7 @@ const CONTROL_PANELS: Record<string, React.FC<any>> = {
   "ai-agent": AiAgentControl,
   camera: CameraControl,
   ledstrip: LedStripControl,
+  pixelframe: PixelFrameControl,
 };
 
 /**

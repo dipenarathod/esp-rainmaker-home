@@ -126,5 +126,10 @@ export const colorAt = (z: StripZones, pos: number): Rgb => {
   return cur;
 };
 
+/**
+ * Formats a colour for React Native styles.
+ * @param c - Colour as [r, g, b], 0..255 (fractions are rounded)
+ * @returns CSS colour string, e.g. `rgb(255,128,0)`
+ */
 export const rgbToCss = (c: Rgb): string =>
   `rgb(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])})`;

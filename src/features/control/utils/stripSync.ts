@@ -8,19 +8,29 @@ import type { ESPCDFDevice, ESPCDFNode } from "@store";
 import { getDeviceCaps } from "@features/control/utils/deviceAttributes";
 
 /**
- * Music sync (audio-reactive leader / follower) shared with the LED strip
- * firmware (strip_types.h, audio_sync.c).
+ * Music sync (audio-reactive leader / follower) shared with the LED strip and
+ * Pixel Frame firmware.
  *
- * - `custom.strip.sync_role`: 0 off, 1 follow, 2 lead. Lead only on devices
- *   whose `cdf.caps` lists `mic`.
- * - `custom.strip.sync_group`: 1..8. Devices sync only within one group
- *   (each group is its own UDP port on the local network).
+ * - `custom.sync.role`: 0 off, 1 follow, 2 lead. Lead only on devices whose
+ *   `cdf.caps` lists `mic`.
+ * - `custom.sync.group`: 1..8. Devices sync only within one group (each group
+ *   is its own UDP port on the local network).
+ * - `custom.audio.sens`: 1..100, how strongly this device's own music effects
+ *   react (50 = normal). It never changes what a leader sends.
  * - A device takes part only when `cdf.caps` lists `sync`. Zigbee / Thread
- *   lights and older firmware never do, so they never show the Music screen.
+ *   lights and older firmware never do, so they never show the Music tab.
  * Sync runs on the local Wi-Fi only; leader and followers must share it.
+ *
+ * The role / group types were renamed from `custom.strip.sync_*` on
+ * 2026-11-14 so strips and frames share them. Strips still on older firmware
+ * report the old names, so both are read (new names first).
  */
-export const STRIP_PARAM_SYNC_ROLE_TYPE = "custom.strip.sync_role";
-export const STRIP_PARAM_SYNC_GROUP_TYPE = "custom.strip.sync_group";
+export const SYNC_PARAM_ROLE_TYPE = "custom.sync.role";
+export const SYNC_PARAM_GROUP_TYPE = "custom.sync.group";
+export const AUDIO_PARAM_SENS_TYPE = "custom.audio.sens";
+/** Pre-rename types, still reported by older strip firmware. */
+export const LEGACY_SYNC_PARAM_ROLE_TYPE = "custom.strip.sync_role";
+export const LEGACY_SYNC_PARAM_GROUP_TYPE = "custom.strip.sync_group";
 
 export const SYNC_ROLE_OFF = 0;
 export const SYNC_ROLE_FOLLOW = 1;
@@ -30,20 +40,24 @@ export type SyncRole = 0 | 1 | 2;
 export const SYNC_GROUP_MIN = 1;
 export const SYNC_GROUP_MAX = 8;
 
+export const AUDIO_SENS_MIN = 1;
+export const AUDIO_SENS_MAX = 100;
+export const AUDIO_SENS_DEFAULT = 50;
+
 export const ROLE_LABEL: Record<SyncRole, string> = {
   0: "Off",
   1: "Follow",
   2: "Lead",
 };
 
-/** One sync-capable device, flattened for the Music screen. */
+/** One sync-capable device, flattened for the Music tab. */
 export interface SyncMember {
   node: ESPCDFNode;
   device: ESPCDFDevice;
   /** Unique key: node id + device name. */
   key: string;
   role: SyncRole;
-  /** undefined on firmware that predates groups (it is always in group 1). */
+  /** Group 1 on firmware that predates groups. */
   group: number;
   canLead: boolean;
 }
@@ -53,13 +67,37 @@ type Param = NonNullable<ESPCDFDevice["params"]>[number];
 /**
  * Finds a device param by type.
  * @param device - Device to search
- * @param type - Param type, e.g. `custom.strip.sync_role`
+ * @param type - Param type, e.g. `custom.sync.role`
  * @returns The param, or undefined
  */
 export const findParam = (
   device: ESPCDFDevice | undefined,
   type: string,
 ): Param | undefined => device?.params?.find((p) => p.type === type);
+
+/**
+ * The sync role param, under its current or its pre-rename type.
+ * @param device - Device to search
+ * @returns The role param, or undefined when the device cannot sync
+ */
+export const findRoleParam = (device: ESPCDFDevice | undefined): Param | undefined =>
+  findParam(device, SYNC_PARAM_ROLE_TYPE) ?? findParam(device, LEGACY_SYNC_PARAM_ROLE_TYPE);
+
+/**
+ * The sync group param, under its current or its pre-rename type.
+ * @param device - Device to search
+ * @returns The group param, or undefined on firmware without groups
+ */
+export const findGroupParam = (device: ESPCDFDevice | undefined): Param | undefined =>
+  findParam(device, SYNC_PARAM_GROUP_TYPE) ?? findParam(device, LEGACY_SYNC_PARAM_GROUP_TYPE);
+
+/**
+ * The audio sensitivity param.
+ * @param device - Device to search
+ * @returns The sensitivity param, or undefined on firmware without it
+ */
+export const findSensParam = (device: ESPCDFDevice | undefined): Param | undefined =>
+  findParam(device, AUDIO_PARAM_SENS_TYPE);
 
 const clampRole = (v: unknown): SyncRole => {
   const n = Number(v);
@@ -69,6 +107,17 @@ const clampRole = (v: unknown): SyncRole => {
 const clampGroup = (v: unknown): number => {
   const n = Math.round(Number(v));
   return n >= SYNC_GROUP_MIN && n <= SYNC_GROUP_MAX ? n : SYNC_GROUP_MIN;
+};
+
+/**
+ * Reads a sensitivity value, falling back to the default when it is missing
+ * or out of range.
+ * @param v - Param value as reported by the device
+ * @returns Sensitivity 1..100
+ */
+export const clampSens = (v: unknown): number => {
+  const n = Math.round(Number(v));
+  return n >= AUDIO_SENS_MIN && n <= AUDIO_SENS_MAX ? n : AUDIO_SENS_DEFAULT;
 };
 
 /**
@@ -83,9 +132,9 @@ export const toSyncMember = (
 ): SyncMember | null => {
   if (!node || !device) return null;
   const caps = getDeviceCaps(device);
-  const roleParam = findParam(device, STRIP_PARAM_SYNC_ROLE_TYPE);
+  const roleParam = findRoleParam(device);
   if (!caps.has("sync") || !roleParam) return null;
-  const groupParam = findParam(device, STRIP_PARAM_SYNC_GROUP_TYPE);
+  const groupParam = findGroupParam(device);
   return {
     node,
     device,
